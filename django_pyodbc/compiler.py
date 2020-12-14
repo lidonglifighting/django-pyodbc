@@ -203,7 +203,10 @@ class SQLCompiler(compiler.SQLCompiler):
             elif aggregate.sql_function == 'VAR_POP':
                 select[alias].sql_function = 'VARP'
 
-    def as_sql(self, with_limits=True, with_col_aliases=False):
+    def as_sql(self, with_limits=True, with_col_aliases=False, qn=None):
+        
+        self.pre_sql_setup()
+
         # Django #12192 - Don't execute any DB query when QS slicing results in limit 0
         if with_limits and self.query.low_mark == self.query.high_mark:
             return '', ()
@@ -230,7 +233,7 @@ class SQLCompiler(compiler.SQLCompiler):
 
         # Check for high mark only and replace with "TOP"
         if self.query.high_mark is not None and not self.query.low_mark:
-            if self.connection.ops.is_db2:
+            if self.connection.ops.is_db2 or self.connection.ops.is_dbmaker:
                 sql = self._select_top('', raw_sql, self.query.high_mark)
             else:
                 _select = 'SELECT'
@@ -281,7 +284,7 @@ class SQLCompiler(compiler.SQLCompiler):
         # SQL Server 2000 doesn't support the `ROW_NUMBER()` function, thus it
         # is necessary to use the `TOP` construct with `ORDER BY` so we can
         # slice out a particular range of results.
-        if self.connection.ops.sql_server_ver < 2005 and not self.connection.ops.is_db2:
+        if self.connection.ops.sql_server_ver < 2005 and not self.connection.ops.is_db2 and not self.connection.ops.is_dbmaker:
             num_to_select = self.query.high_mark - self.query.low_mark
             order_by_col_with_prefix,order_direction = order.rsplit(' ',1)
             order_by_col = order_by_col_with_prefix.rsplit('.',1)[-1]
@@ -335,6 +338,9 @@ class SQLCompiler(compiler.SQLCompiler):
     def _select_top(self,select,inner_sql,number_to_fetch):
         if self.connection.ops.is_db2:
             return "{select} {inner_sql} FETCH FIRST {number_to_fetch} ROWS ONLY".format(
+                select=select, inner_sql=inner_sql, number_to_fetch=number_to_fetch)
+        if self.connection.ops.is_dbmaker:
+            return "{select} {inner_sql} LIMIT {number_to_fetch} ".format(
                 select=select, inner_sql=inner_sql, number_to_fetch=number_to_fetch)
         else:
             return "{select} TOP {number_to_fetch} {inner_sql}".format(
@@ -507,33 +513,6 @@ class SQLInsertCompiler(compiler.SQLInsertCompiler, SQLCompiler):
         """
         meta = self.query.get_meta()
 
-        if meta.has_auto_field:
-            if hasattr(self.query, 'fields'):
-                # django 1.4 replaced columns with fields
-                fields = self.query.fields
-                auto_field = meta.auto_field
-            else:
-                # < django 1.4
-                fields = self.query.columns
-                auto_field = meta.auto_field.db_column or meta.auto_field.column
-
-            auto_in_fields = auto_field in fields
-
-            quoted_table = self.connection.ops.quote_name(meta.db_table)
-            if not fields or (auto_in_fields and len(fields) == 1 and not params):
-                # convert format when inserting only the primary key without
-                # specifying a value
-                sql = 'INSERT INTO {0} DEFAULT VALUES'.format(
-                    quoted_table
-                )
-                params = []
-            elif auto_in_fields:
-                # wrap with identity insert
-                sql = 'SET IDENTITY_INSERT {table} ON;{sql};SET IDENTITY_INSERT {table} OFF'.format(
-                    table=quoted_table,
-                    sql=sql,
-                )
-
         # mangle SQL to return ID from insert
         # http://msdn.microsoft.com/en-us/library/ms177564.aspx
         if self.return_id and self.connection.features.can_return_id_from_insert:
@@ -675,10 +654,10 @@ class SQLUpdateCompiler(compiler.SQLUpdateCompiler, SQLCompiler):
 class SQLAggregateCompiler(compiler.SQLAggregateCompiler, SQLCompiler):
     def as_sql(self, qn=None):
         self._fix_aggregates()
-        return super(SQLAggregateCompiler, self).as_sql(qn=qn)
+        return super(SQLAggregateCompiler, self).as_sql()
 
 # django's compiler.SQLDateCompiler was removed in 1.8
-if DjangoVersion[0] >= 1 and DjangoVersion[1] >= 8:
+if DjangoVersion[0] > 1 or DjangoVersion[0] == 1 and DjangoVersion[1] >= 8:
 
     import warnings
 

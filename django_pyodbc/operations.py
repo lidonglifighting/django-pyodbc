@@ -58,6 +58,7 @@ from django.utils.dateparse import parse_date, parse_time, parse_datetime
 
 
 from django_pyodbc.compat import smart_text, string_types, timezone
+from django.utils import six
 
 EDITION_AZURE_SQL_DB = 5
 
@@ -73,6 +74,7 @@ class DatabaseOperations(BaseDatabaseOperations):
         self._ss_ver = None
         self._ss_edition = None
         self._is_db2 = None
+        self._is_dbmaker = None
         self._is_openedge = None
         self._left_sql_quote = None
         self._right_sql_quote = None
@@ -80,14 +82,16 @@ class DatabaseOperations(BaseDatabaseOperations):
     @property
     def is_db2(self):
         if self._is_db2 is None:
-            cur = self.connection.cursor()
-            try:
-                cur.execute("SELECT * FROM SYSIBM.COLUMNS FETCH FIRST 1 ROWS ONLY")
-                self._is_db2 = True
-            except Exception:
-                self._is_db2 = False
-
+            options = self.connection.settings_dict.get('OPTIONS', {})
+            self._is_db2 = options.get('is_db2', False)
         return self._is_db2
+
+    @property
+    def is_dbmaker(self):
+        if self._is_dbmaker is None:
+            options = self.connection.settings_dict.get('OPTIONS', {})
+            self._is_dbmaker = options.get('is_dbmaker', False)                
+        return self._is_dbmaker        
 
     @property
     def is_openedge(self):
@@ -105,7 +109,7 @@ class DatabaseOperations(BaseDatabaseOperations):
                 self._left_sql_quote = q
             elif self.is_db2:
                 self._left_sql_quote = '{'
-            elif self.is_openedge:
+            elif self.is_openedge or self.is_dbmaker:
                 self._left_sql_quote = '"'
             else:
                 self._left_sql_quote = '['
@@ -120,7 +124,7 @@ class DatabaseOperations(BaseDatabaseOperations):
                 self._right_sql_quote = q
             elif self.is_db2: 
                 self._right_sql_quote = '}'
-            elif self.is_openedge:
+            elif self.is_openedge or self.is_dbmaker:
                 self._right_sql_quote = '"'
             else:
                 self._right_sql_quote = ']'
@@ -134,7 +138,7 @@ class DatabaseOperations(BaseDatabaseOperations):
             return self._ss_ver
         cur = self.connection.cursor()
         ver_code = None
-        if not self.is_db2 and not self.is_openedge:
+        if not self.is_db2 and not self.is_openedge and not self.is_dbmaker:
             cur.execute("SELECT CAST(SERVERPROPERTY('ProductVersion') as varchar)")
             ver_code = cur.fetchone()[0]
             ver_code = int(ver_code.split('.')[0])
@@ -243,32 +247,13 @@ class DatabaseOperations(BaseDatabaseOperations):
         return 'CONTAINS(%s, %%s)' % field_name
 
     def last_insert_id(self, cursor, table_name, pk_name):
-        """
-        Given a cursor object that has just performed an INSERT statement into
-        a table that has an auto-incrementing ID, returns the newly created ID.
-
-        This method also receives the table name and the name of the primary-key
-        column.
-        """
-        # TODO: Check how the `last_insert_id` is being used in the upper layers
-        #       in context of multithreaded access, compare with other backends
-
-        # IDENT_CURRENT:  http://msdn2.microsoft.com/en-us/library/ms175098.aspx
-        # SCOPE_IDENTITY: http://msdn2.microsoft.com/en-us/library/ms190315.aspx
-        # @@IDENTITY:     http://msdn2.microsoft.com/en-us/library/ms187342.aspx
-
-        # IDENT_CURRENT is not limited by scope and session; it is limited to
-        # a specified table. IDENT_CURRENT returns the value generated for
-        # a specific table in any session and any scope.
-        # SCOPE_IDENTITY and @@IDENTITY return the last identity values that
-        # are generated in any table in the current session. However,
-        # SCOPE_IDENTITY returns values inserted only within the current scope;
-        # @@IDENTITY is not limited to a specific scope.
-
-        table_name = self.quote_name(table_name)
-        cursor.execute("SELECT CAST(IDENT_CURRENT(%s) as bigint)", [table_name])
-        return cursor.fetchone()[0]
-
+#         table_name = self.quote_name(table_name)
+#         cursor.execute("SELECT CAST(IDENT_CURRENT(%s) as bigint)", [table_name])
+#         return cursor.fetchone()[0]
+         table_name = self.quote_name(table_name)
+         cursor.execute("SELECT cast(count(*) as bigint) from %s" % table_name)
+         return cursor.fetchone()[0]
+     
     def fetch_returned_insert_id(self, cursor):
         """
         Given a cursor object that has just performed an INSERT/OUTPUT statement
@@ -278,8 +263,8 @@ class DatabaseOperations(BaseDatabaseOperations):
         return cursor.fetchone()[0]
 
     def lookup_cast(self, lookup_type, internal_type=None):
-        if lookup_type in ('iexact', 'icontains', 'istartswith', 'iendswith'):
-            return "UPPER(%s)"
+     #   if lookup_type in ('iexact', 'icontains', 'istartswith', 'iendswith'):
+     #       return "UPPER(%s)"
         return "%s"
 
     def max_name_length(self):
@@ -312,25 +297,16 @@ class DatabaseOperations(BaseDatabaseOperations):
         """
         return super(DatabaseOperations, self).last_executed_query(cursor, cursor.last_sql, cursor.last_params)
 
-    def savepoint_create_sql(self, sid):
-       """
-       Returns the SQL for starting a new savepoint. Only required if the
-       "uses_savepoints" feature is True. The "sid" parameter is a string
-       for the savepoint id.
-       """
-       return "SAVE TRANSACTION %s" % sid
+    def bulk_insert_sql(self, fields, placeholder_rows):
+        placeholder_rows_sql = (", ".join(row) for row in placeholder_rows)
+        values_sql = ", ".join("(%s)" % sql for sql in placeholder_rows_sql)
+        return "VALUES " + values_sql
 
     def savepoint_commit_sql(self, sid):
        """
        Returns the SQL for committing the given savepoint.
        """
-       return "COMMIT TRANSACTION %s" % sid
-
-    def savepoint_rollback_sql(self, sid):
-       """
-       Returns the SQL for rolling back the given savepoint.
-       """
-       return "ROLLBACK TRANSACTION %s" % sid
+       return "COMMIT WORK"
 
     def sql_flush(self, style, tables, sequences, allow_cascade=False):
         """
@@ -432,8 +408,8 @@ class DatabaseOperations(BaseDatabaseOperations):
         need not necessarily be implemented using "LIKE" in the backend.
         """
         return x
-
-    def value_to_db_datetime(self, value):
+    
+    def adapt_datetimefield_value(self, value):	
         """
         Transform a datetime value to an object compatible with what is expected
         by the backend driver for datetime columns.
@@ -448,7 +424,7 @@ class DatabaseOperations(BaseDatabaseOperations):
             value = value.replace(microsecond=0)
         return value
 
-    def value_to_db_time(self, value):
+    def adapt_timefield_value(self, value):
         """
         Transform a time value to an object compatible with what is expected
         by the backend driver for time columns.
@@ -472,7 +448,7 @@ class DatabaseOperations(BaseDatabaseOperations):
         last = '%s-12-31 23:59:59'
         return [first % value, last % value]
 
-    def value_to_db_decimal(self, value, max_digits, decimal_places):
+    def adapt_decimalfield_value(self, value, max_digits, decimal_places):
         """
         Transform a decimal.Decimal value to an object compatible with what is
         expected by the backend driver for decimal (numeric) columns.

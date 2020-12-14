@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+
 # Copyright (c) 2008, django-pyodbc developers (see README.rst).
 # All rights reserved.
 #
@@ -44,9 +45,11 @@
 MS SQL Server database backend for Django.
 """
 import datetime
+import logging
 import os
 import re
 import sys
+from time import time
 import warnings
 
 from django.core.exceptions import ImproperlyConfigured
@@ -56,6 +59,8 @@ try:
 except ImportError:
     e = sys.exc_info()[1]
     raise ImproperlyConfigured("Error loading pyodbc module: %s" % e)
+
+logger = logging.getLogger('django.db.backends')
 
 m = re.match(r'(\d+)\.(\d+)\.(\d+)(?:-beta(\d+))?', Database.version)
 vlist = list(m.groups())
@@ -76,39 +81,29 @@ from django.db.backends.signals import connection_created
 
 from django.conf import settings
 from django import VERSION as DjangoVersion
-if DjangoVersion[:2] == (1, 10):
-    _DJANGO_VERSION = 19
-elif DjangoVersion[:2] == (1, 9):
-    _DJANGO_VERSION = 19
-elif DjangoVersion[:2] == (1, 8):
-    _DJANGO_VERSION = 18
-elif DjangoVersion[:2] == (1, 7):
-    _DJANGO_VERSION = 17
-elif DjangoVersion[:2] == (1, 6):
-    _DJANGO_VERSION = 16
-elif DjangoVersion[:2] == (1, 5):
-    _DJANGO_VERSION = 15
-elif DjangoVersion[:2] == (1, 4):
-    _DJANGO_VERSION = 14
-elif DjangoVersion[:2] == (1, 3):
-    _DJANGO_VERSION = 13
-elif DjangoVersion[:2] == (1, 2):
-    _DJANGO_VERSION = 12
+if DjangoVersion[:2] == (2, 2):
+    _DJANGO_VERSION = 22
 else:
-    raise ImproperlyConfigured("Django %d.%d is not supported." % DjangoVersion[:2])
+    if DjangoVersion[0] == 1:
+        raise ImproperlyConfigured("Django %d.%d " % DjangoVersion[:2] + 
+            "is not supported on 2.+ versions of django-pyodbc.  Please look " +
+            "into the 1.x versions of django-pyodbc to see if your 1.x " +
+            "version of Django is supported by django-pyodbc")
+    else:
+        raise ImproperlyConfigured("Django %d.%d is not supported." % DjangoVersion[:2])
 
 from django_pyodbc.operations import DatabaseOperations
 from django_pyodbc.client import DatabaseClient
 from django_pyodbc.compat import binary_type, text_type, timezone
 from django_pyodbc.creation import DatabaseCreation
 from django_pyodbc.introspection import DatabaseIntrospection
+from .schema import DatabaseSchemaEditor
 
 DatabaseError = Database.Error
 IntegrityError = Database.IntegrityError
 
 class DatabaseFeatures(BaseDatabaseFeatures):
     can_use_chunked_reads = False
-    can_return_id_from_insert = True
     supports_microsecond_precision = False
     supports_regex_backreferencing = False
     supports_subqueries_in_group_by = False
@@ -117,7 +112,7 @@ class DatabaseFeatures(BaseDatabaseFeatures):
     allow_sliced_subqueries = False
     supports_paramstyle_pyformat = False
 
-    #has_bulk_insert = False
+    has_bulk_insert = False
     # DateTimeField doesn't support timezones, only DateTimeOffsetField
     supports_timezones = False
     supports_sequence_reset = False
@@ -133,12 +128,12 @@ class DatabaseFeatures(BaseDatabaseFeatures):
 class DatabaseWrapper(BaseDatabaseWrapper):
     _DJANGO_VERSION = _DJANGO_VERSION
     drv_name = None
-    driver_supports_utf8 = None
     MARS_Connection = False
     unicode_results = False
     datefirst = 7
     Database = Database
     limit_table_list = False
+    is_dbmaker = True
 
     # Collations:       http://msdn2.microsoft.com/en-us/library/ms184391.aspx
     #                   http://msdn2.microsoft.com/en-us/library/ms179886.aspx
@@ -155,15 +150,15 @@ class DatabaseWrapper(BaseDatabaseWrapper):
         'exact': '= %s',
         'iexact': "= UPPER(%s)",
         'contains': "LIKE %s ESCAPE '\\'",
-        'icontains': "LIKE UPPER(%s) ESCAPE '\\'",
+        'icontains': "LIKE %s ESCAPE '\\'",
         'gt': '> %s',
         'gte': '>= %s',
         'lt': '< %s',
         'lte': '<= %s',
         'startswith': "LIKE %s ESCAPE '\\'",
         'endswith': "LIKE %s ESCAPE '\\'",
-        'istartswith': "LIKE UPPER(%s) ESCAPE '\\'",
-        'iendswith': "LIKE UPPER(%s) ESCAPE '\\'",
+        'istartswith': "LIKE %s ESCAPE '\\'",
+        'iendswith': "LIKE %s ESCAPE '\\'",
 
         # TODO: remove, keep native T-SQL LIKE wildcards support
         # or use a "compatibility layer" and replace '*' with '%'
@@ -177,6 +172,14 @@ class DatabaseWrapper(BaseDatabaseWrapper):
     # In Django 1.8 data_types was moved from DatabaseCreation to DatabaseWrapper.
     # See https://docs.djangoproject.com/en/1.10/releases/1.8/#database-backend-api
     data_types = DatabaseCreation.data_types
+    SchemaEditorClass = DatabaseSchemaEditor
+    features_class = DatabaseFeatures
+    ops_class = DatabaseOperations
+    client_class = DatabaseClient
+    creation_class = DatabaseCreation
+    introspection_class = DatabaseIntrospection
+    validation_class = BaseDatabaseValidation
+    
 
     def __init__(self, *args, **kwargs):
         super(DatabaseWrapper, self).__init__(*args, **kwargs)
@@ -188,7 +191,6 @@ class DatabaseWrapper(BaseDatabaseWrapper):
             self.datefirst = options.get('datefirst', 7)
             self.unicode_results = options.get('unicode_results', False)
             self.encoding = options.get('encoding', 'utf-8')
-            self.driver_supports_utf8 = options.get('driver_supports_utf8', None)
             self.driver_needs_utf8 = options.get('driver_needs_utf8', None)
             self.limit_table_list = options.get('limit_table_list', False)
 
@@ -205,10 +207,7 @@ class DatabaseWrapper(BaseDatabaseWrapper):
 
         self.test_create = self.settings_dict.get('TEST_CREATE', True)
 
-        if _DJANGO_VERSION >= 13:
-            self.features = DatabaseFeatures(self)
-        else:
-            self.features = DatabaseFeatures()
+        self.features = DatabaseFeatures(self)
         self.ops = DatabaseOperations(self)
         self.client = DatabaseClient(self)
         self.creation = DatabaseCreation(self)
@@ -228,8 +227,7 @@ class DatabaseWrapper(BaseDatabaseWrapper):
             'database': settings_dict['NAME'],
         }
         conn_params.update(settings_dict['OPTIONS'])
-        if 'autocommit' in conn_params:
-            del conn_params['autocommit']
+
         if settings_dict['USER']:
             conn_params['user'] = settings_dict['USER']
         if settings_dict['PASSWORD']:
@@ -247,7 +245,8 @@ class DatabaseWrapper(BaseDatabaseWrapper):
         pass
 
     def _set_autocommit(self, autocommit):
-        pass
+        with self.wrap_database_errors:
+            self.connection.autocommit = autocommit
 
     def _get_connection_string(self):
         settings_dict = self.settings_dict
@@ -329,75 +328,9 @@ class DatabaseWrapper(BaseDatabaseWrapper):
         connectionstring = ';'.join(cstr_parts)
         return connectionstring
 
-    def _cursor(self):
-        new_conn = False
-        settings_dict = self.settings_dict
-
-
-        if self.connection is None:
-            new_conn = True
-            connstr = self._get_connection_string()#';'.join(cstr_parts)
-            options = settings_dict['OPTIONS']
-            autocommit = options.get('autocommit', False)
-            if self.unicode_results:
-                self.connection = Database.connect(connstr, \
-                        autocommit=autocommit, \
-                        unicode_results='True')
-            else:
-                self.connection = Database.connect(connstr, \
-                        autocommit=autocommit)
-            connection_created.send(sender=self.__class__, connection=self)
-
+    def create_cursor(self, name=None):
         cursor = self.connection.cursor()
-        if new_conn:
-            # Set date format for the connection. Also, make sure Sunday is
-            # considered the first day of the week (to be consistent with the
-            # Django convention for the 'week_day' Django lookup) if the user
-            # hasn't told us otherwise
-
-            if not self.ops.is_db2 and not self.ops.is_openedge:
-                # IBM's DB2 doesn't support this syntax and a suitable
-                # equivalent could not be found.
-                cursor.execute("SET DATEFORMAT ymd; SET DATEFIRST %s" % self.datefirst)
-            if self.ops.sql_server_ver < 2005:
-                self.creation.data_types['TextField'] = 'ntext'
-                self.data_types['TextField'] = 'ntext'
-                self.features.can_return_id_from_insert = False
-
-            ms_sqlncli = re.compile('^((LIB)?SQLN?CLI|LIBMSODBCSQL)')
-            self.drv_name = self.connection.getinfo(Database.SQL_DRIVER_NAME).upper()
-
-            # http://msdn.microsoft.com/en-us/library/ms131686.aspx
-            if self.ops.sql_server_ver >= 2005 and ms_sqlncli.match(self.drv_name) and self.MARS_Connection:
-                # How to to activate it: Add 'MARS_Connection': True
-                # to the DATABASE_OPTIONS dictionary setting
-                self.features.can_use_chunked_reads = True
-
-            if self.drv_name.startswith('LIBTDSODBC'):
-                # FreeTDS can't execute some sql queries like CREATE DATABASE etc.
-                # in multi-statement, so we need to commit the above SQL sentence(s)
-                # to avoid this
-                if not self.connection.autocommit:
-                    self.connection.commit()
-
-                freetds_version = self.connection.getinfo(Database.SQL_DRIVER_VER)
-                if self.driver_supports_utf8 is None:
-                    try:
-                        from distutils.version import LooseVersion
-                    except ImportError:
-                        warnings.warn(Warning('Using naive FreeTDS version detection. Install distutils to get better version detection.'))
-                        self.driver_supports_utf8 = not freetds_version.startswith('0.82')
-                    else:
-                        # This is the minimum version that properly supports
-                        # Unicode. Though it started in version 0.82, the
-                        # implementation in that version was buggy.
-                        self.driver_supports_utf8 = LooseVersion(freetds_version) >= LooseVersion('0.91')
-
-            elif self.driver_supports_utf8 is None:
-                self.driver_supports_utf8 = (self.drv_name == 'SQLSRV32.DLL'
-                                             or ms_sqlncli.match(self.drv_name))
-
-        return CursorWrapper(cursor, self.driver_supports_utf8, self.encoding)
+        return CursorWrapper(cursor)
 
     def _execute_foreach(self, sql, table_names=None):
         cursor = self.cursor()
@@ -426,12 +359,13 @@ class CursorWrapper(object):
     A wrapper around the pyodbc's cursor that takes in account a) some pyodbc
     DB-API 2.0 implementation and b) some common ODBC driver particularities.
     """
-    def __init__(self, cursor, driver_supports_utf8, encoding=""):
+    def __init__(self, cursor, encoding="", db_wrpr=None):
         self.cursor = cursor
-        self.driver_supports_utf8 = driver_supports_utf8
+ #       self.driver_supports_utf8 = driver_supports_utf8
         self.last_sql = ''
         self.last_params = ()
         self.encoding = encoding
+        self.db_wrpr = db_wrpr
 
     def close(self):
         try:
@@ -440,39 +374,28 @@ class CursorWrapper(object):
             pass
 
     def format_sql(self, sql, n_params=None):
-        if not self.driver_supports_utf8 and isinstance(sql, text_type):
-            # Older FreeTDS (and other ODBC drivers?) don't support Unicode yet, so
-            # we need to encode the SQL clause itself in utf-8
-            sql = sql.encode('utf-8')
         # pyodbc uses '?' instead of '%s' as parameter placeholder.
         if n_params is not None:
             try:
-                sql = sql % tuple('?' * n_params)
-            except:
+                if '%s' in sql and n_params>0:
+                    sql = sql.replace('%s', '?')
+                else:
+                    sql = sql % tuple('?' * n_params)
+            except Exception as e:
                 #Todo checkout whats happening here
                 pass
         else:
             if '%s' in sql:
                 sql = sql.replace('%s', '?')
-        if sys.version.startswith('3') and type(sql) is not str:
-            sql = sql.decode(self.encoding or sys.stdout.encoding)
         return sql
 
     def format_params(self, params):
         fp = []
         for p in params:
             if isinstance(p, text_type):
-                if not self.driver_supports_utf8:
-                    # Older FreeTDS (and other ODBC drivers?) doesn't support Unicode
-                    # yet, so we need to encode parameters in utf-8
-                    fp.append(p.encode('utf-8'))
-                else:
-                    fp.append(p)
+                fp.append(p)
             elif isinstance(p, binary_type):
-                if not self.driver_supports_utf8:
-                    fp.append(p.decode(self.encoding).encode('utf-8'))
-                else:
-                    fp.append(p)
+                fp.append(p)
             elif isinstance(p, type(True)):
                 if p:
                     fp.append(1)
@@ -521,16 +444,13 @@ class CursorWrapper(object):
         (pyodbc Rows are not sliceable).
         """
         needs_utc = _DJANGO_VERSION >= 14 and settings.USE_TZ
-        if not (needs_utc or not self.driver_supports_utf8):
+        if not (needs_utc):
             return tuple(rows)
         # FreeTDS (and other ODBC drivers?) don't support Unicode yet, so we
         # need to decode UTF-8 data coming from the DB
         fr = []
         for row in rows:
-            if not self.driver_supports_utf8 and isinstance(row, binary_type):
-                row = row.decode(self.encoding)
-
-            elif needs_utc and isinstance(row, datetime.datetime):
+            if needs_utc and isinstance(row, datetime.datetime):
                 row = row.replace(tzinfo=timezone.utc)
             fr.append(row)
         return tuple(fr)
@@ -567,3 +487,34 @@ class CursorWrapper(object):
                 'sql': '-- RELEASE SAVEPOINT %s -- (because assertNumQueries)' % self.ops.quote_name(sid),
                 'time': '0.000',
             })
+
+    def _savepoint_allowed(self):
+        return self.in_atomic_block
+# copied from Django 
+# https://github.com/django/django/blob/0bf7b25f8f667d3710de91e91ae812efde05187c/django/db/backends/utils.py#L92
+# Not optimized/refactored to maintain a semblance to the original code 
+class CursorDebugWrapper(CursorWrapper):
+
+    def execute(self, sql, params=()):
+        start = time()
+        try:
+            return super().execute(sql, params)
+        finally:
+            stop = time()
+            duration = stop - start
+            logger.debug(
+                '(%.3f) %s; args=%s', duration, sql, params,
+                extra={'duration': duration, 'sql': sql, 'params': params}
+            )
+
+    def executemany(self, sql, param_list):
+        start = time()
+        try:
+            return super().executemany(sql, param_list)
+        finally:
+            stop = time()
+            duration = stop - start
+            logger.debug(
+                '(%.3f) %s; args=%s', duration, sql, param_list,
+                extra={'duration': duration, 'sql': sql, 'params': param_list}
+            )

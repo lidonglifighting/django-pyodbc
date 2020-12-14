@@ -54,13 +54,13 @@ from django_pyodbc.compat import b, md5_constructor
 
 class DataTypesWrapper(dict):
     def __getitem__(self, item):
-        if item in ('PositiveIntegerField', 'PositiveSmallIntegerField'):
+#        if item in ('PositiveIntegerField', 'PositiveSmallIntegerField'):
             # The check name must be unique for the database. Add a random
             # component so the regresion tests don't complain about duplicate names
-            fldtype = {'PositiveIntegerField': 'int', 'PositiveSmallIntegerField': 'smallint'}[item]
-            rnd_hash = md5_constructor(b(str(random.random()))).hexdigest()
-            unique = base64.b64encode(b(rnd_hash), b('__'))[:6]
-            return '%(fldtype)s CONSTRAINT [CK_%(fldtype)s_pos_%(unique)s_%%(column)s] CHECK ([%%(column)s] >= 0)' % locals()
+#            fldtype = {'PositiveIntegerField': 'int', 'PositiveSmallIntegerField': 'smallint'}[item]
+#           rnd_hash = md5_constructor(b(str(random.random()))).hexdigest()
+#            unique = base64.b64encode(b(rnd_hash), b('__'))[:6]
+#            return '%(fldtype)s CONSTRAINT CK_%(fldtype)s_pos_%(unique)s_%%(column)s CHECK ((%%(column)s) >= 0)' % locals()
         return super(DataTypesWrapper, self).__getitem__(item)
 
 class DatabaseCreation(BaseDatabaseCreation):
@@ -73,37 +73,36 @@ class DatabaseCreation(BaseDatabaseCreation):
     # output (the "qn_" prefix is stripped before the lookup is performed.
 
     data_types = DataTypesWrapper({
-        'AutoField':                    'int IDENTITY (1, 1)',
-        'BigAutoField':                 'bigint IDENTITY (1, 1)',
+        'AutoField':                    'serial',
+        'BigAutoField':                 'bigserial',
         'BigIntegerField':              'bigint',
-        'BinaryField':                  'varbinary(max)',
-        'BooleanField':                 'bit',
+        'BinaryField':                  'binary(max)',
+        'BooleanField':                 'int',
         'CharField':                    'nvarchar(%(max_length)s)',
         'CommaSeparatedIntegerField':   'nvarchar(%(max_length)s)',
         'DateField':                    'date',
-        'DateTimeField':                'datetime',
-        'DateTimeOffsetField':          'datetimeoffset',
+        'DateTimeField':                'timestamp',
         'DecimalField':                 'decimal(%(max_digits)s, %(decimal_places)s)',
-        'FileField':                    'nvarchar(%(max_length)s)',
+        'FileField':                    'File',
         'FilePathField':                'nvarchar(%(max_length)s)',
-        'FloatField':                   'double precision',
+        'FloatField':                   'double',
         'GenericIPAddressField':        'nvarchar(39)',
         'IntegerField':                 'int',
         'IPAddressField':               'nvarchar(15)',
-        'LegacyDateField':              'datetime',
-        'LegacyDateTimeField':          'datetime',
+        'LegacyDateField':              'timestamp',
+        'LegacyDateTimeField':          'timestamp',
         'LegacyTimeField':              'time',
         'NewDateField':                 'date',
-        'NewDateTimeField':             'datetime2',
+        'NewDateTimeField':             'timestamp',
         'NewTimeField':                 'time',
-        'NullBooleanField':             'bit',
+        'NullBooleanField':             'int',
         'OneToOneField':                'int',
-        'PositiveIntegerField':         'int CHECK ([%(column)s] >= 0)',
-        'PositiveSmallIntegerField':    'smallint CHECK ([%(column)s] >= 0)',
+        'PositiveIntegerField':         'int CHECK (%(column)s >= 0)',
+        'PositiveSmallIntegerField':    'smallint CHECK (%(column)s >= 0)',
         'SlugField':                    'nvarchar(%(max_length)s)',
         'SmallIntegerField':            'smallint',
-        'TextField':                    'nvarchar(max)',
-        'TimeField':                    'time',
+        'TextField':                    'nclob',
+        'TimeField':                    'time',        
     })
 
     def _create_test_db(self, verbosity, autoclobber):
