@@ -65,7 +65,7 @@ class DatabaseIntrospection(BaseDatabaseIntrospection):
         Database.SQL_DECIMAL:           'DecimalField',
         Database.SQL_DOUBLE:            'FloatField',
         Database.SQL_FLOAT:             'FloatField',
-        Database.SQL_GUID:              'TextField',
+#        Database.SQL_GUID:              'TextField',
         Database.SQL_INTEGER:           'IntegerField',
         Database.SQL_LONGVARBINARY:     'BinaryField',
         #Database.SQL_LONGVARCHAR:       ,

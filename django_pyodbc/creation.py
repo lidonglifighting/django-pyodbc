@@ -62,7 +62,6 @@ class DataTypesWrapper(dict):
 #            unique = base64.b64encode(b(rnd_hash), b('__'))[:6]
 #            return '%(fldtype)s CONSTRAINT CK_%(fldtype)s_pos_%(unique)s_%%(column)s CHECK ((%%(column)s) >= 0)' % locals()
         return super(DataTypesWrapper, self).__getitem__(item)
-
 class DatabaseCreation(BaseDatabaseCreation):
     # This dictionary maps Field objects to their associated MS SQL column
     # types, as strings. Column-type strings can contain format strings; they'll
@@ -83,6 +82,7 @@ class DatabaseCreation(BaseDatabaseCreation):
         'DateField':                    'date',
         'DateTimeField':                'timestamp',
         'DecimalField':                 'decimal(%(max_digits)s, %(decimal_places)s)',
+        'DurationField':                'bigint',
         'FileField':                    'File',
         'FilePathField':                'nvarchar(%(max_length)s)',
         'FloatField':                   'double',
@@ -102,10 +102,10 @@ class DatabaseCreation(BaseDatabaseCreation):
         'SlugField':                    'nvarchar(%(max_length)s)',
         'SmallIntegerField':            'smallint',
         'TextField':                    'nclob',
-        'TimeField':                    'time',        
+        'TimeField':                    'timestamp',        
     })
 
-    def _create_test_db(self, verbosity, autoclobber):
+    def _create_test_db(self, verbosity=1, autoclobber=False, keepdb=False):
         settings_dict = self.connection.settings_dict
 
         if self.connection._DJANGO_VERSION >= 13:
@@ -128,6 +128,7 @@ class DatabaseCreation(BaseDatabaseCreation):
 
         if not self.connection.test_create:
             # use the existing database instead of creating a new one
+            '''
             if verbosity >= 1:
                 print("Dropping tables ... ")
 
@@ -135,9 +136,8 @@ class DatabaseCreation(BaseDatabaseCreation):
             settings_dict["NAME"] = test_name
             cursor = self.connection.cursor()
             qn = self.connection.ops.quote_name
-            sql = "SELECT TABLE_NAME, CONSTRAINT_NAME " \
-                  "FROM INFORMATION_SCHEMA.TABLE_CONSTRAINTS " \
-                  "WHERE CONSTRAINT_TYPE = 'FOREIGN KEY'"
+            sql = "SELECT TABLE_NAME FROM SYSTABLE " \
+                  "FROM SYSFOREIGNKEY "
             for row in cursor.execute(sql).fetchall():
                 objs = (qn(row[0]), qn(row[1]))
                 cursor.execute("ALTER TABLE %s DROP CONSTRAINT %s" % objs)
@@ -146,12 +146,27 @@ class DatabaseCreation(BaseDatabaseCreation):
                     print("Dropping table %s" % table)
                 cursor.execute('DROP TABLE %s' % qn(table))
             self.connection.connection.commit()
+            '''
             return test_name
 
-        if self.connection.ops.on_azure_sql_db:
-            self.connection.close()
-            settings_dict["NAME"] = 'master'
         return super(DatabaseCreation, self)._create_test_db(verbosity, autoclobber)
+    
+    def _execute_create_test_db(self, cursor, parameters, keepdb=False):
+        try:
+            if keepdb and self._database_exists(cursor, parameters['NAME']):
+                # If the database should be kept and it already exists, don't
+                # try to create a new one.
+                return
+            super()._execute_create_test_db(cursor, parameters, keepdb)
+        except Exception as e:
+            if getattr(e.__cause__, 'pgcode', '') != errorcodes.DUPLICATE_DATABASE:
+                # All errors except "database already exists" cancel tests.
+                self.log('Got an error creating the test database: %s' % e)
+                sys.exit(2)
+            elif not keepdb:
+                # If the database should be kept, ignore "database already
+                # exists".
+                raise e
 
     def _destroy_test_db(self, test_database_name, verbosity):
         "Internal implementation - remove the test db tables."

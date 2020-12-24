@@ -142,7 +142,7 @@ class DatabaseWrapper(BaseDatabaseWrapper):
     #   CONTAINS:       http://msdn2.microsoft.com/en-us/library/ms187787.aspx
     #   FREETEXT:       http://msdn2.microsoft.com/en-us/library/ms176078.aspx
 
-    vendor = 'microsoft'
+    vendor = 'dbmaker'
     operators = {
         # Since '=' is used not only for string comparision there is no way
         # to make it case (in)sensitive. It will simply fallback to the

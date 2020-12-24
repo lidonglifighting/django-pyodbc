@@ -170,12 +170,27 @@ class DatabaseOperations(BaseDatabaseOperations):
         the SQL that extracts a value from the given date field field_name.
         """
         if lookup_type == 'week_day':
-            return "DATEPART(dw, %s)" % field_name
+            # DAYOFWEEK() returns an integer, 1-7, Sunday=1.
+            # Note: WEEKDAY() returns 0-6, Monday=0.
+            return "DAYOFWEEK(%s)" % field_name
         else:
-            return "DATEPART(%s, %s)" % (lookup_type, field_name)
-
+            # Override the value of default_week_format for consistency with
+            # other database backends.
+            # Mode 3: Monday, 1-53, with 4 or more days this year.
+            return "WEEK(%s)" % field_name
+    
     def date_trunc_sql(self, lookup_type, field_name):
-        return "DATEADD(%s, DATEDIFF(%s, 0, %s), 0)" % (lookup_type, lookup_type, field_name)
+        if lookup_type =='year':
+            return "YEAR(%s)" % field_name
+        if lookup_type == 'month':
+            return "MONTH(%s)" % field_name
+        elif lookup_type == 'quarter':
+            return "QUARTER(%s)" % field_name
+        elif lookup_type == 'week':
+            return "WEEK(%s)" % field_name
+        else:
+            return "DAYOFYEAR(%s)" % field_name
+        #return "DATEADD(%s, DATEDIFF(%s, 0, %s), 0)" % (lookup_type, lookup_type, field_name)
 
     def _switch_tz_offset_sql(self, field_name, tzname):
         """

@@ -53,7 +53,7 @@ class DatabaseSchemaEditor(BaseDatabaseSchemaEditor):
                     sql += " DEFAULT %s"
                     params += [default_value]
         
-        if  db_params['type'].lower() not in ("serial", "bigserial"):          
+        if  db_params['type'].lower() not in ("serial", "bigserial", "jsoncols"):          
             if (field.empty_strings_allowed and not field.primary_key and
                 self.connection.features.interprets_empty_strings_as_nulls):
                 null = True
