@@ -102,7 +102,7 @@ class DatabaseCreation(BaseDatabaseCreation):
         'SlugField':                    'nvarchar(%(max_length)s)',
         'SmallIntegerField':            'smallint',
         'TextField':                    'nclob',
-        'TimeField':                    'timestamp',        
+        'TimeField':                    'time',        
     })
 
     def _create_test_db(self, verbosity=1, autoclobber=False, keepdb=False):

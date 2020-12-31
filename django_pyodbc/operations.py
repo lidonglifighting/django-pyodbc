@@ -181,9 +181,9 @@ class DatabaseOperations(BaseDatabaseOperations):
     
     def date_trunc_sql(self, lookup_type, field_name):
         if lookup_type =='year':
-            return "YEAR(%s)" % field_name
+            return "TO_DATE(STRDATE(%s,'start of year'), 'yyyy-mm-dd')" % field_name
         if lookup_type == 'month':
-            return "MONTH(%s)" % field_name
+            return "TO_DATE(STRDATE(%s, 'start of month'), 'yyyy-mm-dd')" % field_name
         elif lookup_type == 'quarter':
             return "QUARTER(%s)" % field_name
         elif lookup_type == 'week':
@@ -265,9 +265,10 @@ class DatabaseOperations(BaseDatabaseOperations):
 #         table_name = self.quote_name(table_name)
 #         cursor.execute("SELECT CAST(IDENT_CURRENT(%s) as bigint)", [table_name])
 #         return cursor.fetchone()[0]
-         table_name = self.quote_name(table_name)
-         cursor.execute("SELECT cast(count(*) as bigint) from %s" % table_name)
-         return cursor.fetchone()[0]
+        table_name = self.quote_name(table_name)
+        cursor.execute(" select LAST_SERIAL from SYSCONINFO")
+#         cursor.execute("SELECT cast(count(*) as bigint) from %s" % table_name)
+        return cursor.fetchone()[0]
      
     def fetch_returned_insert_id(self, cursor):
         """
@@ -321,7 +322,7 @@ class DatabaseOperations(BaseDatabaseOperations):
        """
        Returns the SQL for committing the given savepoint.
        """
-       return "COMMIT WORK"
+       return "REMOVE SAVEPOINT %s" % self.quote_name(sid)
 
     def sql_flush(self, style, tables, sequences, allow_cascade=False):
         """
@@ -449,7 +450,7 @@ class DatabaseOperations(BaseDatabaseOperations):
         # SQL Server doesn't support microseconds
         if isinstance(value, string_types):
             return datetime.datetime(*(time.strptime(value, '%H:%M:%S')[:6]))
-        return datetime.datetime(1900, 1, 1, value.hour, value.minute, value.second)
+        return datetime.time(value.hour, value.minute, value.second)
 
     def year_lookup_bounds(self, value):
         """
