@@ -75,7 +75,7 @@ class DatabaseCreation(BaseDatabaseCreation):
         'AutoField':                    'serial',
         'BigAutoField':                 'bigserial',
         'BigIntegerField':              'bigint',
-        'BinaryField':                  'binary(max)',
+        'BinaryField':                  'blob',
         'BooleanField':                 'int',
         'CharField':                    'nvarchar(%(max_length)s)',
         'CommaSeparatedIntegerField':   'nvarchar(%(max_length)s)',
@@ -102,7 +102,8 @@ class DatabaseCreation(BaseDatabaseCreation):
         'SlugField':                    'nvarchar(%(max_length)s)',
         'SmallIntegerField':            'smallint',
         'TextField':                    'nclob',
-        'TimeField':                    'time',        
+        'TimeField':                    'time',
+        'UUIDField':                    'char(32)',       
     })
 
     def _create_test_db(self, verbosity=1, autoclobber=False, keepdb=False):

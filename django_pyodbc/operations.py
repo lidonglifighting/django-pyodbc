@@ -43,6 +43,8 @@
 import datetime
 import decimal
 import time
+import uuid
+
 try:
     import pytz
 except:
@@ -216,7 +218,20 @@ class DatabaseOperations(BaseDatabaseOperations):
             tzoffset = "%+03d:%02d" % (hours, minutes)
             field_name = "CAST(SWITCHOFFSET(TODATETIMEOFFSET(%s, '+00:00'), '%s') AS DATETIME2)" % (field_name, tzoffset)
         return field_name
-
+   
+    def _convert_field_to_tz(self, field_name, tzname):
+        if not settings.USE_TZ:
+            return field_name
+#        if not self._tzname_re.match(tzname):
+#            raise ValueError("Invalid time zone name: %s" % tzname)
+        # Convert from UTC to local time, returning TIMESTAMP WITH TIME ZONE
+        # and cast it back to TIMESTAMP to strip the TIME ZONE details.
+        return "TO_DATE(STRDATE(%s, '%s'), 'yyyy-mm-dd')" % (field_name, tzname)
+        
+    def datetime_extract_sql(self, lookup_type, field_name, tzname):
+        field_name = self._convert_field_to_tz(field_name, tzname)
+        return self.date_extract_sql(lookup_type, field_name)
+    
     def datetime_trunc_sql(self, lookup_type, field_name, tzname):
         """
         Given a lookup_type of 'year', 'month', 'day', 'hour', 'minute' or
@@ -334,50 +349,15 @@ class DatabaseOperations(BaseDatabaseOperations):
         color_style() or no_style() in django.core.management.color.
         """
         if tables:
-            # Cannot use TRUNCATE on tables that are referenced by a FOREIGN KEY
-            # So must use the much slower DELETE
-            from django.db import connections
-            cursor = connections[self.connection.alias].cursor()
-            # Try to minimize the risks of the braindeaded inconsistency in
-            # DBCC CHEKIDENT(table, RESEED, n) behavior.
-            seqs = []
-            for seq in sequences:
-                cursor.execute("SELECT COUNT(*) FROM %s" % self.quote_name(seq["table"]))
-                rowcnt = cursor.fetchone()[0]
-                elem = {}
-                if rowcnt:
-                    elem['start_id'] = 0
-                else:
-                    elem['start_id'] = 1
-                elem.update(seq)
-                seqs.append(elem)
-            cursor.execute("SELECT TABLE_NAME, CONSTRAINT_NAME FROM INFORMATION_SCHEMA.TABLE_CONSTRAINTS WHERE CONSTRAINT_TYPE not in ('PRIMARY KEY','UNIQUE')")
-            fks = cursor.fetchall()
-            sql_list = ['ALTER TABLE %s NOCHECK CONSTRAINT %s;' % \
-                    (self.quote_name(fk[0]), self.quote_name(fk[1])) for fk in fks]
-            sql_list.extend(['%s %s %s;' % (style.SQL_KEYWORD('DELETE'), style.SQL_KEYWORD('FROM'),
-                             style.SQL_FIELD(self.quote_name(table)) ) for table in tables])
-
-            if self.on_azure_sql_db:
-                import warnings
-                warnings.warn("The identity columns will never be reset " \
-                              "on Windows Azure SQL Database.",
-                              RuntimeWarning)
-            else:
-                # Then reset the counters on each table.
-                sql_list.extend(['%s %s (%s, %s, %s) %s %s;' % (
-                    style.SQL_KEYWORD('DBCC'),
-                    style.SQL_KEYWORD('CHECKIDENT'),
-                    style.SQL_FIELD(self.quote_name(seq["table"])),
-                    style.SQL_KEYWORD('RESEED'),
-                    style.SQL_FIELD('%d' % seq['start_id']),
-                    style.SQL_KEYWORD('WITH'),
-                    style.SQL_KEYWORD('NO_INFOMSGS'),
-                    ) for seq in seqs])
-
-            sql_list.extend(['ALTER TABLE %s CHECK CONSTRAINT %s;' % \
-                    (self.quote_name(fk[0]), self.quote_name(fk[1])) for fk in fks])
-            return sql_list
+            sql = ['CALL SETSYSTEMOPTION(\'FKCHK\', \'0\');']
+            for table in tables:
+                sql.append('%s %s;' % (
+                    style.SQL_KEYWORD('DELETE FROM '),
+                    style.SQL_FIELD(self.quote_name(table)),
+                ))
+            sql.append('CALL SETSYSTEMOPTION(\'FKCHK\', \'1\');')
+            sql.extend(self.sequence_reset_by_name_sql(style, sequences))
+            return sql
         else:
             return []
 
@@ -416,7 +396,7 @@ class DatabaseOperations(BaseDatabaseOperations):
     def prep_for_like_query(self, x):
         """Prepares a value for use in a LIKE query."""
         # http://msdn2.microsoft.com/en-us/library/ms179859.aspx
-        return smart_text(x).replace('\\', '\\\\').replace('[', '[[]').replace('%', '[%]').replace('_', '[_]')
+        return smart_text(x).replace('%', '\%').replace('_', '\_')
 
     def prep_for_iexact_query(self, x):
         """
@@ -519,7 +499,19 @@ class DatabaseOperations(BaseDatabaseOperations):
         elif value is not None and field and field.get_internal_type() == 'FloatField':
             value = float(value)
         return value
-
+    
+    def get_db_converters(self, expression):
+        converters = super().get_db_converters(expression)
+        internal_type = expression.output_field.get_internal_type()       
+        if internal_type == 'UUIDField':
+            converters.append(self.convert_uuidfield_value)
+        return converters
+    
+    def convert_uuidfield_value(self, value, expression, connection):
+        if value is not None:
+            value = uuid.UUID(value)
+        return value
+    
     def return_insert_id(self):
         """
         MSSQL implements the RETURNING SQL standard extension differently from

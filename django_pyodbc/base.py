@@ -340,19 +340,27 @@ class DatabaseWrapper(BaseDatabaseWrapper):
             cursor.execute(sql % self.ops.quote_name(table_name))
 
     def check_constraints(self, table_names=None):
-        self._execute_foreach('ALTER TABLE %s WITH CHECK CHECK CONSTRAINT ALL', table_names)
-
+        self.cursor().execute('CALL SETSYSTEMOPTION(\'FKCHK\', \'1\');')
+         
     def disable_constraint_checking(self):
         # Windows Azure SQL Database doesn't support sp_msforeachtable
         #cursor.execute('EXEC sp_msforeachtable "ALTER TABLE ? NOCHECK CONSTRAINT ALL"')
-        self._execute_foreach('ALTER TABLE %s NOCHECK CONSTRAINT ALL')
+        self.cursor().execute('CALL SETSYSTEMOPTION(\'FKCHK\', \'0\');')
         return True
-
+               
     def enable_constraint_checking(self):
         # Windows Azure SQL Database doesn't support sp_msforeachtable
         #cursor.execute('EXEC sp_msforeachtable "ALTER TABLE ? WITH CHECK CHECK CONSTRAINT ALL"')
         self.check_constraints()
-
+    
+    def is_usable(self):
+        try:
+            # Use a psycopg cursor directly, bypassing Django's utilities.
+            self.connection.cursor().execute("SELECT 1")
+        except Database.Error:
+            return False
+        else:
+            return True    
 
 class CursorWrapper(object):
     """
@@ -490,6 +498,8 @@ class CursorWrapper(object):
 
     def _savepoint_allowed(self):
         return self.in_atomic_block
+    
+
 # copied from Django 
 # https://github.com/django/django/blob/0bf7b25f8f667d3710de91e91ae812efde05187c/django/db/backends/utils.py#L92
 # Not optimized/refactored to maintain a semblance to the original code 
@@ -518,3 +528,4 @@ class CursorDebugWrapper(CursorWrapper):
                 '(%.3f) %s; args=%s', duration, sql, param_list,
                 extra={'duration': duration, 'sql': sql, 'params': param_list}
             )
+            
