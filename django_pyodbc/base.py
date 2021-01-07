@@ -341,7 +341,6 @@ class DatabaseWrapper(BaseDatabaseWrapper):
         else:
             return True    
 
-FORMAT_QMARK_REGEX = re.compile(r'(?<!%)%s')
 
 class CursorWrapper(object):
     """
@@ -395,7 +394,6 @@ class CursorWrapper(object):
         return tuple(fp)
 
     def execute(self, sql, params=()):       
-        
         self.last_sql = sql
         sql = self.format_sql(sql, len(params))
         params = self.format_params(params)
@@ -403,17 +401,6 @@ class CursorWrapper(object):
         sql = sql.replace('%%', '%')
         return self.cursor.execute(sql, params)
         
-        '''
-        try:
-            return self.cursor.execute(sql, params)
-        except IntegrityError:
-            e = sys.exc_info()[1]
-            raise utils.IntegrityError(*e.args)
-        except DatabaseError:
-            e = sys.exc_info()[1]
-            raise utils.DatabaseError(*e.args)
-        '''
-
     def executemany(self, sql, params_list):
         sql = self.format_sql(sql)
         # pyodbc's cursor.executemany() doesn't support an empty param_list
@@ -432,9 +419,6 @@ class CursorWrapper(object):
         except DatabaseError:
             e = sys.exc_info()[1]
             raise utils.DatabaseError(*e.args)
-    
-    def convert_query(self, query):
-        return FORMAT_QMARK_REGEX.sub('?', query).replace('%%', '%')
     
     def format_results(self, rows):
         """
