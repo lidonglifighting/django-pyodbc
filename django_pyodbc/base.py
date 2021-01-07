@@ -72,7 +72,6 @@ if pyodbc_ver < (2, 0, 38, 9999):
 from django.db import utils
 try:
     from django.db.backends.base.base import BaseDatabaseWrapper
-    from django.db.backends.base.features import  BaseDatabaseFeatures
     from django.db.backends.base.validation import BaseDatabaseValidation
 except ImportError:
     # import location prior to Django 1.8
@@ -98,34 +97,14 @@ from django_pyodbc.compat import binary_type, text_type, timezone
 from django_pyodbc.creation import DatabaseCreation
 from django_pyodbc.introspection import DatabaseIntrospection
 from .schema import DatabaseSchemaEditor
+from .features import DatabaseFeatures
 
 DatabaseError = Database.Error
 IntegrityError = Database.IntegrityError
 
-class DatabaseFeatures(BaseDatabaseFeatures):
-    can_use_chunked_reads = False
-    supports_microsecond_precision = False
-    supports_regex_backreferencing = False
-    supports_subqueries_in_group_by = False
-    supports_transactions = True
-    #uses_savepoints = True
-    allow_sliced_subqueries = False
-    supports_paramstyle_pyformat = False
-
-    has_bulk_insert = False
-    # DateTimeField doesn't support timezones, only DateTimeOffsetField
-    supports_timezones = False
-    supports_sequence_reset = False
-    supports_tablespaces = True
-    ignores_nulls_in_unique_constraints = False
-    can_introspect_autofield = True
-
-
-    def _supports_transactions(self):
-        # keep it compatible with Django 1.3 and 1.4
-        return self.supports_transactions
-
 class DatabaseWrapper(BaseDatabaseWrapper):
+    vendor = 'dbmaker'
+    display_name = 'dbmaker'
     _DJANGO_VERSION = _DJANGO_VERSION
     drv_name = None
     MARS_Connection = False
@@ -362,6 +341,8 @@ class DatabaseWrapper(BaseDatabaseWrapper):
         else:
             return True    
 
+FORMAT_QMARK_REGEX = re.compile(r'(?<!%)%s')
+
 class CursorWrapper(object):
     """
     A wrapper around the pyodbc's cursor that takes in account a) some pyodbc
@@ -413,11 +394,16 @@ class CursorWrapper(object):
                 fp.append(p)
         return tuple(fp)
 
-    def execute(self, sql, params=()):
+    def execute(self, sql, params=()):       
+        
         self.last_sql = sql
         sql = self.format_sql(sql, len(params))
         params = self.format_params(params)
         self.last_params = params
+        sql = sql.replace('%%', '%')
+        return self.cursor.execute(sql, params)
+        
+        '''
         try:
             return self.cursor.execute(sql, params)
         except IntegrityError:
@@ -426,6 +412,7 @@ class CursorWrapper(object):
         except DatabaseError:
             e = sys.exc_info()[1]
             raise utils.DatabaseError(*e.args)
+        '''
 
     def executemany(self, sql, params_list):
         sql = self.format_sql(sql)
@@ -445,7 +432,10 @@ class CursorWrapper(object):
         except DatabaseError:
             e = sys.exc_info()[1]
             raise utils.DatabaseError(*e.args)
-
+    
+    def convert_query(self, query):
+        return FORMAT_QMARK_REGEX.sub('?', query).replace('%%', '%')
+    
     def format_results(self, rows):
         """
         Decode data coming from the database if needed and convert rows to tuples

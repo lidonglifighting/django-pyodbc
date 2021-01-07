@@ -175,11 +175,16 @@ class DatabaseOperations(BaseDatabaseOperations):
             # DAYOFWEEK() returns an integer, 1-7, Sunday=1.
             # Note: WEEKDAY() returns 0-6, Monday=0.
             return "DAYOFWEEK(%s)" % field_name
-        else:
-            # Override the value of default_week_format for consistency with
-            # other database backends.
-            # Mode 3: Monday, 1-53, with 4 or more days this year.
+        elif lookup_type == 'week':
+            # IW = ISO week number
             return "WEEK(%s)" % field_name
+        elif lookup_type == 'quarter':
+            return "QUARTER(%s)" % field_name
+ #       elif lookup_type == 'iso_year':
+ #           return "TO_CHAR(%s, 'IYYY')" % field_name
+        else:
+            # https://docs.oracle.com/en/database/oracle/oracle-database/18/sqlrf/EXTRACT-datetime.html
+            return "DAYOFMONTH(%s)" % field_name
     
     def date_trunc_sql(self, lookup_type, field_name):
         if lookup_type =='year':
@@ -229,7 +234,7 @@ class DatabaseOperations(BaseDatabaseOperations):
         return "TO_DATE(STRDATE(%s, '%s'), 'yyyy-mm-dd')" % (field_name, tzname)
         
     def datetime_extract_sql(self, lookup_type, field_name, tzname):
-        field_name = self._convert_field_to_tz(field_name, tzname)
+#        field_name = self._convert_field_to_tz(field_name, tzname)
         return self.date_extract_sql(lookup_type, field_name)
     
     def datetime_trunc_sql(self, lookup_type, field_name, tzname):
