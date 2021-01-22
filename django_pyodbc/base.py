@@ -61,6 +61,12 @@ except ImportError:
     raise ImproperlyConfigured("Error loading pyodbc module: %s" % e)
 
 logger = logging.getLogger('django.db.backends')
+logger.setLevel(logging.DEBUG)
+handler = logging.FileHandler('mylog.log')
+formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+handler.setFormatter(formatter)
+logger.addHandler(handler)
+logger.debug('This is a DEBUG message')
 
 m = re.match(r'(\d+)\.(\d+)\.(\d+)(?:-beta(\d+))?', Database.version)
 vlist = list(m.groups())
@@ -113,6 +119,7 @@ class DatabaseWrapper(BaseDatabaseWrapper):
     Database = Database
     limit_table_list = False
     is_dbmaker = True
+    force_debug_cursor = True
 
     # Collations:       http://msdn2.microsoft.com/en-us/library/ms184391.aspx
     #                   http://msdn2.microsoft.com/en-us/library/ms179886.aspx
@@ -121,7 +128,6 @@ class DatabaseWrapper(BaseDatabaseWrapper):
     #   CONTAINS:       http://msdn2.microsoft.com/en-us/library/ms187787.aspx
     #   FREETEXT:       http://msdn2.microsoft.com/en-us/library/ms176078.aspx
 
-    vendor = 'dbmaker'
     operators = {
         # Since '=' is used not only for string comparision there is no way
         # to make it case (in)sensitive. It will simply fallback to the
@@ -483,23 +489,13 @@ class CursorDebugWrapper(CursorWrapper):
         start = time()
         try:
             return super().execute(sql, params)
-        finally:
+        except Exception:
             stop = time()
             duration = stop - start
             logger.debug(
-                '(%.3f) %s; args=%s', duration, sql, params,
-                extra={'duration': duration, 'sql': sql, 'params': params}
+                'rc=%d: %s; args=%s', -1, sql, params,
             )
 
     def executemany(self, sql, param_list):
         start = time()
-        try:
-            return super().executemany(sql, param_list)
-        finally:
-            stop = time()
-            duration = stop - start
-            logger.debug(
-                '(%.3f) %s; args=%s', duration, sql, param_list,
-                extra={'duration': duration, 'sql': sql, 'params': param_list}
-            )
-            
+        return super().executemany(sql, param_list)

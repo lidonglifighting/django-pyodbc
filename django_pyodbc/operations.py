@@ -194,9 +194,9 @@ class DatabaseOperations(BaseDatabaseOperations):
         elif lookup_type == 'quarter':
             return "QUARTER(%s)" % field_name
         elif lookup_type == 'week':
-            return "WEEK(%s)" % field_name
+            return "TO_DATE(STRDATE(%s, 'start of week'), 'yyyy-mm-dd')" % field_name
         else:
-            return "DAYOFYEAR(%s)" % field_name
+            return field_name
         #return "DATEADD(%s, DATEDIFF(%s, 0, %s), 0)" % (lookup_type, lookup_type, field_name)
 
     def _switch_tz_offset_sql(self, field_name, tzname):

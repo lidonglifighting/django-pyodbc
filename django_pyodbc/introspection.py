@@ -51,7 +51,8 @@ else:
     row_to_table_info = lambda row: TableInfo(row[0].lower(), row[1])
 
 import pyodbc as Database
-
+import sqlparse
+from django.utils.datastructures import OrderedSet
 SQL_AUTOFIELD = -777555
 
 class DatabaseIntrospection(BaseDatabaseIntrospection):
@@ -100,11 +101,9 @@ class DatabaseIntrospection(BaseDatabaseIntrospection):
         #from django.db import connection
         #cursor.execute("SELECT COLUMNPROPERTY(OBJECT_ID(%s), %s, 'IsIdentity')",
         #                 (connection.ops.quote_name(table_name), column_name))
-        cursor.execute("SELECT COLUMNPROPERTY(OBJECT_ID(%s), %s, 'IsIdentity')",
+        cursor.execute("SELECT COUNT(*) FROM SYSCOLUMN WHERE TABLE_NAME = UPPER(%s) AND COLUMN_NAME=%s AND TYPE_NAME='SERIAL'",
                          (self.connection.ops.quote_name(table_name), column_name))
         return cursor.fetchall()[0][0]
-
-
 
     def get_table_description(self, cursor, table_name, identity_check=True):
         """Returns a description of the table, with DB-API cursor.description interface.
@@ -130,78 +129,34 @@ class DatabaseIntrospection(BaseDatabaseIntrospection):
                 column[1] = Database.SQL_WCHAR
             items.append(column)
         return items
-
-    def _name_to_index(self, cursor, table_name):
-        """
-        Returns a dictionary of {field_name: field_index} for the given table.
-        Indexes are 0-based.
-        """
-        return dict([(d[0], i) for i, d in enumerate(self.get_table_description(cursor, table_name, identity_check=False))])
-
+    
+    def colname(self, cursor, table_name): 
+        colnames = [c[3] for c in cursor.columns(table=table_name)]
+        return colnames
+                
+    def _bytes_to_list(self, bytes):
+        
+        #based 0
+        item = []  
+        i = 0
+        columnid = int.from_bytes(bytes[i*2:(i+1)*2], byteorder='little', signed=False)-1;
+        while (columnid >= 0):
+            i += 1
+            item.append(columnid)
+            #base 0, so actual column_order-1 will be the index of column_name
+            columnid= int.from_bytes(bytes[i*2:(i+1)*2], byteorder='little', signed=False)-1
+        return item
+          
     def get_relations(self, cursor, table_name):
         """
-        Returns a dictionary of {field_index: (field_index_other_table, other_table)}
-        representing all relationships to the given table. Indexes are 0-based.
+        Return a dictionary of {field_name: (field_name_other_table, other_table)}
+        representing all relationships to the given table.
         """
-        # CONSTRAINT_COLUMN_USAGE: http://msdn2.microsoft.com/en-us/library/ms174431.aspx
-        # CONSTRAINT_TABLE_USAGE:  http://msdn2.microsoft.com/en-us/library/ms179883.aspx
-        # REFERENTIAL_CONSTRAINTS: http://msdn2.microsoft.com/en-us/library/ms179987.aspx
-        # TABLE_CONSTRAINTS:       http://msdn2.microsoft.com/en-us/library/ms181757.aspx
-
-        table_index = self._name_to_index(cursor, table_name)
-        sql = """
-SELECT e.COLUMN_NAME AS column_name,
-  c.TABLE_NAME AS referenced_table_name,
-  d.COLUMN_NAME AS referenced_column_name
-FROM INFORMATION_SCHEMA.TABLE_CONSTRAINTS AS a
-INNER JOIN INFORMATION_SCHEMA.REFERENTIAL_CONSTRAINTS AS b
-  ON a.CONSTRAINT_NAME = b.CONSTRAINT_NAME
-INNER JOIN INFORMATION_SCHEMA.CONSTRAINT_TABLE_USAGE AS c
-  ON b.UNIQUE_CONSTRAINT_NAME = c.CONSTRAINT_NAME
-INNER JOIN INFORMATION_SCHEMA.CONSTRAINT_COLUMN_USAGE AS d
-  ON c.CONSTRAINT_NAME = d.CONSTRAINT_NAME
-INNER JOIN INFORMATION_SCHEMA.CONSTRAINT_COLUMN_USAGE AS e
-  ON a.CONSTRAINT_NAME = e.CONSTRAINT_NAME
-WHERE a.TABLE_NAME = %s AND a.CONSTRAINT_TYPE = 'FOREIGN KEY'"""
-        cursor.execute(sql, (table_name,))
-        return dict([(table_index[item[0]], (self._name_to_index(cursor, item[1])[item[2]], item[1]))
-                     for item in cursor.fetchall()])
-
-    def get_indexes(self, cursor, table_name):
-    #    Returns a dictionary of fieldname -> infodict for the given table,
-    #    where each infodict is in the format:
-    #        {'primary_key': boolean representing whether it's the primary key,
-    #         'unique': boolean representing whether it's a unique index}
-        sql = """
-            select
-            C.name as [column_name],
-            IX.is_unique as [unique],
-            IX.is_primary_key as [primary_key]
-            from
-            sys.tables T
-            join sys.index_columns IC on IC.object_id = T.object_id
-            join sys.columns C on C.object_id = T.object_id and C.column_id = IC.column_id
-            join sys.indexes IX on IX.object_id = T.object_id and IX.index_id = IC.index_id
-            where
-            T.name = %s
-            -- Omit multi-column keys
-            and not exists (
-                select *
-                from sys.index_columns cols
-                where
-                    cols.object_id = T.object_id
-                    and cols.index_id = IC.index_id
-                    and cols.key_ordinal > 1
-            )
-        """
-        cursor.execute(sql,[table_name])
-        constraints = cursor.fetchall()
-        indexes = dict()
-
-        for column_name, unique, primary_key in constraints:
-            indexes[column_name.lower()] = {"primary_key":primary_key, "unique":unique}
-
-        return indexes
+        constraints = self.get_key_columns(cursor, table_name)
+        relations = {}
+        for my_fieldname, other_table, other_field in constraints:
+            relations[my_fieldname] = (other_field, other_table)
+        return relations
 
     #def get_collations_list(self, cursor):
     #    """
@@ -218,38 +173,177 @@ WHERE a.TABLE_NAME = %s AND a.CONSTRAINT_TYPE = 'FOREIGN KEY'"""
         Backends can override this to return a list of (column_name, referenced_table_name,
         referenced_column_name) for all key columns in given table.
         """
-        source_field_dict = self._name_to_index(cursor, table_name)
-
         sql = """
-select
-    COLUMN_NAME = fk_cols.COLUMN_NAME,
-    REFERENCED_TABLE_NAME = pk.TABLE_NAME,
-    REFERENCED_COLUMN_NAME = pk_cols.COLUMN_NAME
-from INFORMATION_SCHEMA.REFERENTIAL_CONSTRAINTS ref_const
-join INFORMATION_SCHEMA.TABLE_CONSTRAINTS fk
-    on ref_const.CONSTRAINT_CATALOG = fk.CONSTRAINT_CATALOG
-    and ref_const.CONSTRAINT_SCHEMA = fk.CONSTRAINT_SCHEMA
-    and ref_const.CONSTRAINT_NAME = fk.CONSTRAINT_NAME
-    and fk.CONSTRAINT_TYPE = 'FOREIGN KEY'
+SELECT 
+  PK_COL_ORDER,
+  TRIM(PK_TBL_NAME) AS referenced_table_name,
+  FK_COL_ORDER
+FROM SYSTEM.SYSFOREIGNKEY 
+WHERE FK_TBL_NAME = Upper(%s) """
+        cursor.execute(sql, (table_name,))
+        foreignKeyInfo = cursor.fetchall()
+        foreignKeys = []
 
-join INFORMATION_SCHEMA.TABLE_CONSTRAINTS pk
-    on ref_const.UNIQUE_CONSTRAINT_CATALOG = pk.CONSTRAINT_CATALOG
-    and ref_const.UNIQUE_CONSTRAINT_SCHEMA = pk.CONSTRAINT_SCHEMA
-    and ref_const.UNIQUE_CONSTRAINT_NAME = pk.CONSTRAINT_NAME
-    And pk.CONSTRAINT_TYPE = 'PRIMARY KEY'
+        for pk_col_order, referenced_table_name, fk_col_order in foreignKeyInfo:
+            pkcolIndex = self._bytes_to_list(pk_col_order)
+            fkcolIndex = self._bytes_to_list(fk_col_order)
+            i = 0
+            while (i<len(pkcolIndex)):
+                foreignKeys.append((self.colname(cursor, table_name)[fkcolIndex[i]], referenced_table_name , self.colname(cursor, referenced_table_name)[pkcolIndex[i]]))
+                i += 1
+            
+        return foreignKeys;
 
-join INFORMATION_SCHEMA.KEY_COLUMN_USAGE fk_cols
-    on ref_const.CONSTRAINT_NAME = fk_cols.CONSTRAINT_NAME
+    def get_sequences(self, cursor, table_name, table_fields=()):
+        for f in table_fields:
+            if isinstance(f, models.AutoField):
+                return [{'table': table_name, 'column': f.column}]
+        return []
+    
+    def get_primary_key_column(self, cursor, table_name):
+        """Return the column name of the primary key for the given table."""
+        # map pyodb[c's cursor.columns to db-api cursor description
+        columns = [c[3] for c in cursor.primaryKeys(table=table_name)]
+        items = []
+        for column in columns:
+            items.append(column)
+        return items
+    
+    def _parse_column_constraint(self, sql, columns):
+        statement = sqlparse.parse(sql)[0]
+        tokens = (token for token in statement.flatten() if not token.is_whitespace)
+        braces_deep = 0
+        check_columns=[]
+        for token in tokens:
+            if token.match(sqlparse.tokens.Punctuation, '('):
+                braces_deep += 1
+            elif token.match(sqlparse.tokens.Punctuation, ')'):
+                braces_deep -= 1
+                if braces_deep < 0:
+                    # End of columns and constraints for table definition.
+                    break
+            elif braces_deep == 0 and token.match(sqlparse.tokens.Punctuation, ','):
+                # End of current column or constraint definition.
+                break
+            
+            if token.ttype in (sqlparse.tokens.Name, sqlparse.tokens.Keyword):
+                if token.value.upper() in columns:
+                    check_columns.append(token.value)
+            elif token.ttype == sqlparse.tokens.Literal.String.Symbol:
+                if token.value[1:-1] in columns:
+                    check_columns.append(token.value[1:-1])
+        
+        return check_columns
+            
+    def get_constraints(self, cursor, table_name):
+        """
+        Retrieve any constraints or keys (unique, pk, fk, check, index)
+        across one or more columns.
 
-join INFORMATION_SCHEMA.KEY_COLUMN_USAGE pk_cols
-    on pk.CONSTRAINT_NAME = pk_cols.CONSTRAINT_NAME
-where
-    fk.TABLE_NAME = %s"""
+        Return a dict mapping constraint names to their attributes,
+        where attributes is a dict with keys:
+         * columns: List of columns this covers
+         * primary_key: True if primary key, False otherwise
+         * unique: True if this is a unique constraint, False otherwise
+         * foreign_key: (table, column) of target, or None
+         * check: True if check constraint, False otherwise
+         * index: True if index, False otherwise.
+         * orders: The order (ASC/DESC) defined for the columns of indexes
+         * type: The type of the index (btree, hash, etc.)
 
-        cursor.execute(sql,[table_name])
-        relations = cursor.fetchall()
-
-        key_columns = []
-        key_columns.extend([(source_column, target_table, target_column) \
-            for source_column, target_table, target_column in relations])
-        return key_columns
+        Some backends may return special constraint names that don't exist
+        if they don't name constraints of a certain type (e.g. SQLite)
+        """
+        """
+        Retrieve any constraints or keys (unique, pk, fk, check, index) across
+        one or more columns.
+        """
+        constraints = {}
+        # Get the foreign keys
+        query = """
+            SELECT fk_name, fk_col_order, pk_tbl_name, pk_col_order
+            FROM system.sysforeignkey
+            WHERE fk_tbl_name = upper(%s)
+        """
+        cursor.execute(query, [table_name])
+        for constraint, fk_col_order, pk_tbl_name, pk_col_order in cursor.fetchall():
+            pkcolIndex = self._bytes_to_list(pk_col_order)
+            fkcolIndex = self._bytes_to_list(fk_col_order)
+            fkcollist = []
+            pkcollist = []
+            i = 0
+            while (i<len(fkcolIndex)):
+                fkcollist.append(self.colname(cursor, table_name)[fkcolIndex[i]])
+                pkcollist.append(self.colname(cursor, table_name)[pkcolIndex[i]])
+                i += 1
+            constraints[constraint] = {
+                'columns': fkcollist,
+                'primary_key': False,
+                'unique': False,
+                'index': False,
+                'check': False,
+                'foreign_key': (pk_tbl_name, pkcollist),
+                }
+    
+        #indexes (primary, unique, index)
+        cursor.execute("call SHOWINDEX('sysadm', '%s')" % table_name)
+        for table, non_unique, index, type_, colseq, column, asc_or_desc in [x[1:8] for x in cursor.fetchall()]:
+            if index not in constraints:
+                constraints[index] = {
+                    'columns': OrderedSet(),
+                    'primary_key': True if index=='PRIMARYKEY' else False,
+                    'unique': True if non_unique==0 else False,
+                    'order': 'ASC' if asc_or_desc == 'A' else 'DESC',
+                    'index': True if index != 'PRIMARYKEY' else False, 
+                }
+            constraints[index]['columns'].add(column)    
+            constraints[index]['type'] = 'BTREE'
+            constraints[index]['check'] = False
+            constraints[index]['foreign_key'] = None
+        
+        #column constraint
+        query = """
+            SELECT constr, column_name
+            FROM system.syscolumn
+            WHERE table_name = upper(%s) AND BLOBLEN(CONSTR)>0
+        """
+        cursor.execute(query, [table_name])
+        
+        unnamed_constrains_index = 0
+        for sql, column in cursor.fetchall():
+            sql = sql.replace('value', column) 
+            check_columns = self._parse_column_constraint(sql, self.colname(cursor, table_name));
+            unnamed_constrains_index += 1
+            constraints['__unnamed_constraint_%s__' % unnamed_constrains_index] = {
+                'check': True,
+                'columns': check_columns,
+                'primary_key': False,
+                'unique': False,
+                'foreign_key': None,
+                'index': False,
+            } if check_columns else None
+            
+        #table constraint
+        query = """
+            SELECT constr
+            FROM system.systable
+            WHERE table_name = upper(%s) AND BLOBLEN(CONSTR)>0
+        """
+        cursor.execute(query, [table_name])
+        
+        #table constraint
+        for sql in cursor.fetchall():
+            check_columns = self._parse_column_constraint(sql[0], self.colname(cursor, table_name));
+            unnamed_constrains_index += 1
+            constraints['__unnamed_constraint_%s__' % unnamed_constrains_index] = {
+                'check': True,
+                'columns': check_columns,
+                'primary_key': False,
+                'unique': False,
+                'foreign_key': None,
+                'index': False,
+            } if check_columns else None   
+        
+        for constraint in constraints.values():
+            constraint['columns'] = list(constraint['columns'])
+        return constraints

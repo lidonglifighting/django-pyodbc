@@ -17,6 +17,7 @@ class DatabaseFeatures(BaseDatabaseFeatures):
     supports_tablespaces = True
     ignores_nulls_in_unique_constraints = False
     can_introspect_autofield = True
+#    case_whennot_not_supported = True
 
 
     def _supports_transactions(self):
