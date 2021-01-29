@@ -39,7 +39,7 @@
 # ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
 # (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
 # SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
-
+import subprocess
 import base64
 import random
 
@@ -105,7 +105,7 @@ class DatabaseCreation(BaseDatabaseCreation):
         'TimeField':                    'time',
         'UUIDField':                    'char(32)',       
     })
-
+    
     def _create_test_db(self, verbosity=1, autoclobber=False, keepdb=False):
         settings_dict = self.connection.settings_dict
 
@@ -128,8 +128,8 @@ class DatabaseCreation(BaseDatabaseCreation):
                 settings_dict['TEST_NAME'] = test_name
 
         if not self.connection.test_create:
-            # use the existing database instead of creating a new one
             '''
+            # use the existing database instead of creating a new one
             if verbosity >= 1:
                 print("Dropping tables ... ")
 
@@ -137,76 +137,74 @@ class DatabaseCreation(BaseDatabaseCreation):
             settings_dict["NAME"] = test_name
             cursor = self.connection.cursor()
             qn = self.connection.ops.quote_name
-            sql = "SELECT TABLE_NAME FROM SYSTABLE " \
-                  "FROM SYSFOREIGNKEY "
+            sql = "SELECT distinct trim(FK_TBL_NAME), trim(PK_TBL_NAME) FROM SYSFOREIGNKEY" 
+            cursor.execute("CALL SETSYSTEMOPTION(\'FKCHK\', \'0\')")
+            
             for row in cursor.execute(sql).fetchall():
-                objs = (qn(row[0]), qn(row[1]))
-                cursor.execute("ALTER TABLE %s DROP CONSTRAINT %s" % objs)
-            for table in self.connection.introspection.get_table_list(cursor):
-                if verbosity >= 1:
-                    print("Dropping table %s" % table)
-                cursor.execute('DROP TABLE %s' % qn(table))
+                cursor.execute("DROP TABLE %s" % row[0])
+                cursor.execute("DROP TABLE %s" % row[1])
+           
+            cursor.execute('CALL SETSYSTEMOPTION(\'FKCHK\', \'1\')')
             self.connection.connection.commit()
             '''
+            
             return test_name
 
         return super(DatabaseCreation, self)._create_test_db(verbosity, autoclobber)
-    
+    """
     def _execute_create_test_db(self, cursor, parameters, keepdb=False):
+        creatdb = ['C:\\DBMaker\\5.4\\bin\\dmsql32' , 'C:\\DBMaker\\5.4\\bin\\createdb.sql', '/b']
+        startdb = ['C:\\DBMaker\\5.4\\bin\\dmserver', 'test_utf8db', '/b']
         try:
-            if keepdb and self._database_exists(cursor, parameters['NAME']):
-                # If the database should be kept and it already exists, don't
-                # try to create a new one.
-                return
-            super()._execute_create_test_db(cursor, parameters, keepdb)
+            with subprocess.Popen(createdb, stdout=subprocess.DEVNULL) as dump_proc:
+                with subprocess.Popen(startdb, stdout=subprocess.DEVNULL):
+                    dump_proc.stdout.close()
         except Exception as e:
-            if getattr(e.__cause__, 'pgcode', '') != errorcodes.DUPLICATE_DATABASE:
-                # All errors except "database already exists" cancel tests.
-                self.log('Got an error creating the test database: %s' % e)
-                sys.exit(2)
-            elif not keepdb:
-                # If the database should be kept, ignore "database already
-                # exists".
-                raise e
-
+            self.log('create database: %s' % e)
+            sys.exit(2)    
+        
+    """
     def _destroy_test_db(self, test_database_name, verbosity):
         "Internal implementation - remove the test db tables."
-        if self.connection.test_create:
-            if self.connection.ops.on_azure_sql_db:
-                self.connection.close()
-                self.connection.settings_dict["NAME"] = 'master'
+        if test_database_name:
+            # Remove the SQLite database file
+            os.remove(test_database_name)
 
-            cursor = self.connection.cursor()
-            self.connection.connection.autocommit = True
-            #time.sleep(1) # To avoid "database is being accessed by other users" errors.
-            if not self.connection.ops.on_azure_sql_db:
-                cursor.execute("ALTER DATABASE %s SET SINGLE_USER WITH ROLLBACK IMMEDIATE " % \
-                        self.connection.ops.quote_name(test_database_name))
-            cursor.execute("DROP DATABASE %s" % \
-                    self.connection.ops.quote_name(test_database_name))
-        else:
-            if verbosity >= 1:
-                test_db_repr = ''
-                if verbosity >= 2:
-                    test_db_repr = " ('%s')" % test_database_name
-                print("The database is left undestroyed%s." % test_db_repr)
+    def _clone_test_db(self, suffix, verbosity, keepdb=False):
+        source_database_name = self.connection.settings_dict['NAME']
+        target_database_name = self.get_test_db_clone_settings(suffix)['NAME']
+        test_db_params = {
+            'dbname': self.connection.ops.quote_name(target_database_name),
+            'suffix': self.sql_table_creation_suffix(),
+        }
+        with self._nodb_connection.cursor() as cursor:
+            try:
+                self._execute_create_test_db(cursor, test_db_params, keepdb)
+            except Exception:
+                if keepdb:
+                    # If the database should be kept, skip everything else.
+                    return
+                try:
+                    if verbosity >= 1:
+                        self.log('Destroying old test database for alias %s...' % (
+                            self._get_database_display_str(verbosity, target_database_name),
+                        ))
+                    self._destroy_test_db(test_db_params)
+                    self._execute_create_test_db(cursor, test_db_params, keepdb)
+                except Exception as e:
+                    self.log('Got an error recreating the test database: %s' % e)
+                    sys.exit(2)
+        self._clone_db(source_database_name, target_database_name)
 
-        self.connection.close()
+    def _clone_db(self, source_database_name, target_database_name):
+        dump_args = DatabaseClient.settings_to_cmd_args(self.connection.settings_dict)[1:]
+        dump_args[-1] = source_database_name
+        dump_cmd = ['mysqldump', '--routines', '--events'] + dump_args
+        load_cmd = DatabaseClient.settings_to_cmd_args(self.connection.settings_dict)
+        load_cmd[-1] = target_database_name
 
-    def _prepare_for_test_db_ddl(self):
-        self.connection.connection.rollback()
-        self.connection.connection.autocommit = True
-
-    def _rollback_works(self):
-        # keep it compatible with Django 1.2
-        return self.connection.features.supports_transactions
-
-    def sql_table_creation_suffix(self):
-        suffix = []
-        if self.connection._DJANGO_VERSION >= 17:
-            test_collation = self.connection.settings_dict['TEST']['COLLATION']
-        else:
-            test_collation = self.connection.settings_dict['TEST_COLLATION']
-        if test_collation:
-            suffix.append('COLLATE %s' % test_collation)
-        return ' '.join(suffix)
+        with subprocess.Popen(dump_cmd, stdout=subprocess.PIPE) as dump_proc:
+            with subprocess.Popen(load_cmd, stdin=dump_proc.stdout, stdout=subprocess.DEVNULL):
+                # Allow dump_proc to receive a SIGPIPE if the load process exits.
+                dump_proc.stdout.close()
+            

@@ -203,13 +203,24 @@ class DatabaseWrapper(BaseDatabaseWrapper):
 
     def get_connection_params(self):
         settings_dict = self.settings_dict
-        if not settings_dict['NAME']:
-            from django.core.exceptions import ImproperlyConfigured
+        # None may be used to connect to the default 'dbsample5' db
+        if settings_dict['NAME'] == '':
             raise ImproperlyConfigured(
                 "settings.DATABASES is improperly configured. "
                 "Please supply the NAME value.")
+        if len(settings_dict['NAME'] or '') > self.ops.max_name_length():
+            raise ImproperlyConfigured(
+                "The database name '%s' (%d characters) is longer than "
+                "PostgreSQL's limit of %d characters. Supply a shorter NAME "
+                "in settings.DATABASES." % (
+                    settings_dict['NAME'],
+                    len(settings_dict['NAME']),
+                    self.ops.max_name_length(),
+                )
+            )
         conn_params = {
-            'database': settings_dict['NAME'],
+            'database': settings_dict['NAME'] or 'dbsample5',
+            #**settings_dict['OPTIONS'],
         }
         conn_params.update(settings_dict['OPTIONS'])
 
@@ -257,23 +268,8 @@ class DatabaseWrapper(BaseDatabaseWrapper):
         if 'driver' in options:
             driver = options['driver']
         else:
-            if os.name == 'nt':
-                driver = 'SQL Server'
-            else:
-                driver = 'FreeTDS'
-
-        if driver == 'FreeTDS' or driver.endswith('/libtdsodbc.so'):
-            driver_is_freetds = True
-        else:
-            driver_is_freetds = False
-
-        # Microsoft driver names assumed here are:
-        # * SQL Server
-        # * SQL Native Client
-        # * SQL Server Native Client 10.0/11.0
-        # * ODBC Driver 11 for SQL Server
-        ms_drivers = re.compile('.*SQL (Server$|(Server )?Native Client)')
-
+            driver = 'DBMaker 5.4 Driver'
+   
         if 'dsn' in options:
             cstr_parts.append('DSN=%s' % options['dsn'])
         else:
@@ -283,33 +279,10 @@ class DatabaseWrapper(BaseDatabaseWrapper):
             else:
                 cstr_parts.append('DRIVER={%s}' % driver)
 
-            if ms_drivers.match(driver) or driver_is_freetds and \
-                    options.get('host_is_server', False):
-                if port_str:
-                    host_str += ';PORT=%s' % port_str
-                cstr_parts.append('SERVER=%s' % host_str)
-            elif self.ops.is_openedge:
-                if port_str:
-                    host_str += ';PortNumber=%s' % port_str
-                cstr_parts.append('HostName=%s' % host_str)
-            else:
-                cstr_parts.append('SERVERNAME=%s' % host_str)
-
         if user_str:
             cstr_parts.append('UID=%s;PWD=%s' % (user_str, passwd_str))
-        else:
-            if ms_drivers.match(driver):
-                cstr_parts.append('Trusted_Connection=yes')
-            else:
-                cstr_parts.append('Integrated Security=SSPI')
 
         cstr_parts.append('DATABASE=%s' % db_str)
-
-        if self.MARS_Connection:
-            cstr_parts.append('MARS_Connection=yes')
-
-        if 'extra_params' in options:
-            cstr_parts.append(options['extra_params'])
         connectionstring = ';'.join(cstr_parts)
         return connectionstring
 

@@ -192,13 +192,21 @@ class DatabaseOperations(BaseDatabaseOperations):
         if lookup_type == 'month':
             return "TO_DATE(STRDATE(%s, 'start of month'), 'yyyy-mm-dd')" % field_name
         elif lookup_type == 'quarter':
-            return "QUARTER(%s)" % field_name
+            return "MDY(YEAR(%s), (QUARTER(%s)-1)*3+1, 1)" % (field_name , field_name)
         elif lookup_type == 'week':
             return "TO_DATE(STRDATE(%s, 'start of week'), 'yyyy-mm-dd')" % field_name
         else:
             return field_name
         #return "DATEADD(%s, DATEDIFF(%s, 0, %s), 0)" % (lookup_type, lookup_type, field_name)
 
+    def datetime_cast_date_sql(self, field_name, tzname):
+        field_name = self._convert_field_to_tz(field_name, tzname)
+        return 'DATEPART(%s)' % field_name
+    
+    def datetime_cast_time_sql(self, field_name, tzname):
+        field_name = self._convert_field_to_tz(field_name, tzname)
+        return "CAST(%s AS TIME)" % field_name
+    
     def _switch_tz_offset_sql(self, field_name, tzname):
         """
         Returns the SQL that will convert field_name to UTC from tzname.
@@ -234,31 +242,12 @@ class DatabaseOperations(BaseDatabaseOperations):
         return "TO_DATE(STRDATE(%s, '%s'), 'yyyy-mm-dd')" % (field_name, tzname)
         
     def datetime_extract_sql(self, lookup_type, field_name, tzname):
-#        field_name = self._convert_field_to_tz(field_name, tzname)
+        field_name = self._convert_field_to_tz(field_name, tzname)
         return self.date_extract_sql(lookup_type, field_name)
-    
+ 
     def datetime_trunc_sql(self, lookup_type, field_name, tzname):
-        """
-        Given a lookup_type of 'year', 'month', 'day', 'hour', 'minute' or
-        'second', returns the SQL that truncates the given datetime field
-        field_name to a datetime object with only the given specificity, and
-        a tuple of parameters.
-        """
-        field_name = self._switch_tz_offset_sql(field_name, tzname)
-        reference_date = '0' # 1900-01-01
-        if lookup_type in ['minute', 'second']:
-            # Prevent DATEDIFF overflow by using the first day of the year as
-            # the reference point. Only using for minute and second to avoid any
-            # potential performance hit for queries against very large datasets.
-            reference_date = "CONVERT(datetime2, CONVERT(char(4), {field_name}, 112) + '0101', 112)".format(
-                field_name=field_name,
-            )
-        sql = "DATEADD({lookup}, DATEDIFF({lookup}, {reference_date}, {field_name}), {reference_date})".format(
-            lookup=lookup_type,
-            field_name=field_name,
-            reference_date=reference_date,
-        )
-        return sql, []
+        field_name = self._convert_field_to_tz(field_name, tzname)
+        return self.date_trunc_sql(lookup_type, field_name)
 
     def field_cast_sql(self, db_type, internal_type=None):
         """
@@ -269,7 +258,7 @@ class DatabaseOperations(BaseDatabaseOperations):
 
         TODO: verify that db_type and internal_type do not affect T-SQL CAST statement
         """
-        if self.sql_server_ver < 2005 and db_type and db_type.lower() == 'ntext':
+        if db_type and db_type.lower() == 'blob':
             return 'CAST(%s as nvarchar)'
         return '%s'
 
@@ -517,19 +506,3 @@ class DatabaseOperations(BaseDatabaseOperations):
             value = uuid.UUID(value)
         return value
     
-    def return_insert_id(self):
-        """
-        MSSQL implements the RETURNING SQL standard extension differently from
-        the core database backends and this function is essentially a no-op.
-        The SQL is altered in the SQLInsertCompiler to add the necessary OUTPUT
-        clause.
-        """
-        if self.connection._DJANGO_VERSION < 15:
-            # This gets around inflexibility of SQLInsertCompiler's need to
-            # append an SQL fragment at the end of the insert query, which also must
-            # expect the full quoted table and column name.
-            return ('/* %s */', '')
-
-        # Django #19096 - As of Django 1.5, can return None, None to bypass the
-        # core's SQL mangling.
-        return (None, None)
