@@ -6,7 +6,6 @@ class DatabaseFeatures(BaseDatabaseFeatures):
     supports_regex_backreferencing = False
     supports_subqueries_in_group_by = False
     supports_transactions = True
-    #uses_savepoints = True
     allow_sliced_subqueries = False
     supports_paramstyle_pyformat = False
 
@@ -19,7 +18,3 @@ class DatabaseFeatures(BaseDatabaseFeatures):
     can_introspect_autofield = True
 #    case_whennot_not_supported = True
 
-
-    def _supports_transactions(self):
-        # keep it compatible with Django 1.3 and 1.4
-        return self.supports_transactions

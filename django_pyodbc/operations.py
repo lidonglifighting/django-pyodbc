@@ -62,45 +62,13 @@ from django.utils.dateparse import parse_date, parse_time, parse_datetime
 from django_pyodbc.compat import smart_text, string_types, timezone
 from django.utils import six
 
-EDITION_AZURE_SQL_DB = 5
-
 class DatabaseOperations(BaseDatabaseOperations):
     compiler_module = "django_pyodbc.compiler"
     def __init__(self, connection):
-        if connection._DJANGO_VERSION >= 14:
-            super(DatabaseOperations, self).__init__(connection)
-        else:
-            super(DatabaseOperations, self).__init__()
-
+        super(DatabaseOperations, self).__init__(connection) 
         self.connection = connection
-        self._ss_ver = None
-        self._ss_edition = None
-        self._is_db2 = None
-        self._is_dbmaker = None
-        self._is_openedge = None
         self._left_sql_quote = None
         self._right_sql_quote = None
-
-    @property
-    def is_db2(self):
-        if self._is_db2 is None:
-            options = self.connection.settings_dict.get('OPTIONS', {})
-            self._is_db2 = options.get('is_db2', False)
-        return self._is_db2
-
-    @property
-    def is_dbmaker(self):
-        if self._is_dbmaker is None:
-            options = self.connection.settings_dict.get('OPTIONS', {})
-            self._is_dbmaker = options.get('is_dbmaker', False)                
-        return self._is_dbmaker        
-
-    @property
-    def is_openedge(self):
-        if self._is_openedge is None:
-            options = self.connection.settings_dict.get('OPTIONS', {})
-            self._is_openedge = options.get('openedge', False)
-        return self._is_openedge
 
     @property
     def left_sql_quote(self):
@@ -109,12 +77,8 @@ class DatabaseOperations(BaseDatabaseOperations):
             q = options.get('left_sql_quote', None)
             if q is not None:
                 self._left_sql_quote = q
-            elif self.is_db2:
-                self._left_sql_quote = '{'
-            elif self.is_openedge or self.is_dbmaker:
-                self._left_sql_quote = '"'
             else:
-                self._left_sql_quote = '['
+                self._left_sql_quote = '"'
         return self._left_sql_quote
 
     @property
@@ -124,47 +88,9 @@ class DatabaseOperations(BaseDatabaseOperations):
             q = options.get('right_sql_quote', None)
             if q is not None:
                 self._right_sql_quote = q
-            elif self.is_db2: 
-                self._right_sql_quote = '}'
-            elif self.is_openedge or self.is_dbmaker:
+            else:           
                 self._right_sql_quote = '"'
-            else:
-                self._right_sql_quote = ']'
         return self._right_sql_quote
-
-    def _get_sql_server_ver(self):
-        """
-        Returns the version of the SQL Server in use:
-        """
-        if self._ss_ver is not None:
-            return self._ss_ver
-        cur = self.connection.cursor()
-        ver_code = None
-        if not self.is_db2 and not self.is_openedge and not self.is_dbmaker:
-            cur.execute("SELECT CAST(SERVERPROPERTY('ProductVersion') as varchar)")
-            ver_code = cur.fetchone()[0]
-            ver_code = int(ver_code.split('.')[0])
-        else:
-            ver_code = 0
-        if ver_code >= 11:
-            self._ss_ver = 2012
-        elif ver_code == 10:
-            self._ss_ver = 2008
-        elif ver_code == 9:
-            self._ss_ver = 2005
-        else:
-            self._ss_ver = 2000
-        return self._ss_ver
-    sql_server_ver = property(_get_sql_server_ver)
-
-    def _on_azure_sql_db(self):
-        if self._ss_edition is not None:
-            return self._ss_edition == EDITION_AZURE_SQL_DB
-        cur = self.connection.cursor()
-        cur.execute("SELECT CAST(SERVERPROPERTY('EngineEdition') as integer)")
-        self._ss_edition = cur.fetchone()[0]
-        return self._ss_edition == EDITION_AZURE_SQL_DB
-    on_azure_sql_db = property(_on_azure_sql_db)
 
     def date_extract_sql(self, lookup_type, field_name):
         """
@@ -176,15 +102,19 @@ class DatabaseOperations(BaseDatabaseOperations):
             # Note: WEEKDAY() returns 0-6, Monday=0.
             return "DAYOFWEEK(%s)" % field_name
         elif lookup_type == 'week':
-            # IW = ISO week number
             return "WEEK(%s)" % field_name
         elif lookup_type == 'quarter':
             return "QUARTER(%s)" % field_name
- #       elif lookup_type == 'iso_year':
- #           return "TO_CHAR(%s, 'IYYY')" % field_name
-        else:
-            # https://docs.oracle.com/en/database/oracle/oracle-database/18/sqlrf/EXTRACT-datetime.html
+        elif lookup_type == 'month':
+            return "MONTH(%s)" % field_name
+        elif lookup_type == 'day':
             return "DAYOFMONTH(%s)" % field_name
+        elif lookup_type == 'hour':
+            return "HOUR(%s)" % field_name
+        elif lookup_type == 'minute':
+            return "MINUTE(%s)" % field_name
+        else:
+            return "SECOND(%s)" % field_name
     
     def date_trunc_sql(self, lookup_type, field_name):
         if lookup_type =='year':
@@ -199,6 +129,28 @@ class DatabaseOperations(BaseDatabaseOperations):
             return field_name
         #return "DATEADD(%s, DATEDIFF(%s, 0, %s), 0)" % (lookup_type, lookup_type, field_name)
 
+    def _convert_field_to_tz(self, field_name, tzname):
+        if settings.USE_TZ and not tzname == 'UTC':
+            offset = self._get_utcoffset(tzname)
+            field_name = 'TIMESTAMPADD(%s, %d, %s)' % ('s', offset, field_name)
+        return field_name
+
+    def _get_utcoffset(self, tzname):
+        """
+        Returns UTC offset for given time zone in seconds
+        """
+        # SQL Server has no built-in support for tz database
+        # see http://blogs.msdn.com/b/sqlprogrammability/archive/2008/03/18/using-time-zone-data-in-sql-server-2008.aspx
+        zone = pytz.timezone(tzname)
+        # no way to take DST into account at this point
+        now = datetime.datetime.now()
+        delta = zone.localize(now, is_dst=False).utcoffset()
+        return delta.days * 86400 + delta.seconds
+
+    def datetime_extract_sql(self, lookup_type, field_name, tzname):
+        field_name = self._convert_field_to_tz(field_name, tzname)
+        return self.date_extract_sql(lookup_type, field_name)
+    
     def datetime_cast_date_sql(self, field_name, tzname):
         field_name = self._convert_field_to_tz(field_name, tzname)
         return 'DATEPART(%s)' % field_name
@@ -207,47 +159,30 @@ class DatabaseOperations(BaseDatabaseOperations):
         field_name = self._convert_field_to_tz(field_name, tzname)
         return "CAST(%s AS TIME)" % field_name
     
-    def _switch_tz_offset_sql(self, field_name, tzname):
-        """
-        Returns the SQL that will convert field_name to UTC from tzname.
-        """
-        field_name = self.quote_name(field_name)
-        if settings.USE_TZ:
-            if pytz is None:
-                from django.core.exceptions import ImproperlyConfigured
-                raise ImproperlyConfigured("This query requires pytz, "
-                                           "but it isn't installed.")
-            tz = pytz.timezone(tzname)
-            td = tz.utcoffset(datetime.datetime(2000, 1, 1))
-
-            def total_seconds(td):
-                if hasattr(td, 'total_seconds'):
-                    return td.total_seconds()
-                else:
-                    return td.days * 24 * 60 * 60 + td.seconds
-
-            total_minutes = total_seconds(td) // 60
-            hours, minutes = divmod(total_minutes, 60)
-            tzoffset = "%+03d:%02d" % (hours, minutes)
-            field_name = "CAST(SWITCHOFFSET(TODATETIMEOFFSET(%s, '+00:00'), '%s') AS DATETIME2)" % (field_name, tzoffset)
-        return field_name
-   
-    def _convert_field_to_tz(self, field_name, tzname):
-        if not settings.USE_TZ:
-            return field_name
-#        if not self._tzname_re.match(tzname):
-#            raise ValueError("Invalid time zone name: %s" % tzname)
-        # Convert from UTC to local time, returning TIMESTAMP WITH TIME ZONE
-        # and cast it back to TIMESTAMP to strip the TIME ZONE details.
-        return "TO_DATE(STRDATE(%s, '%s'), 'yyyy-mm-dd')" % (field_name, tzname)
-        
-    def datetime_extract_sql(self, lookup_type, field_name, tzname):
-        field_name = self._convert_field_to_tz(field_name, tzname)
-        return self.date_extract_sql(lookup_type, field_name)
- 
     def datetime_trunc_sql(self, lookup_type, field_name, tzname):
         field_name = self._convert_field_to_tz(field_name, tzname)
-        return self.date_trunc_sql(lookup_type, field_name)
+        fields = ['year', 'month', 'day', 'hour', 'minute', 'week']
+        if lookup_type == 'quarter':
+            return (
+                "CAST(MDY((QUARTER({field_name})-1)*3+1, 1, YEAR({field_name})) AS TIMESTAMP)"
+            ).format(field_name=field_name)
+        if lookup_type == 'second':
+            return field_name
+        try:
+            i = fields.index(lookup_type)
+        except ValueError:
+            sql = field_name
+        else:
+            sql = "CAST(STRDATETIME(%s, 'start of %s') AS TIMESTAMP)" % (field_name, fields[i])
+        return sql
+    
+    def time_trunc_sql(self, lookup_type, field_name):
+        fields = ['hour', 'minute']
+        if lookup_type in fields:
+            format_str = fields[lookup_type]
+            return "CAST(STRTIME(%s, 'start of %s') AS TIME)" % (field_name, format_str)
+        else:
+            return "CAST(STRTIME(%s) AS TIME)" % (field_name)
 
     def field_cast_sql(self, db_type, internal_type=None):
         """
@@ -506,3 +441,5 @@ class DatabaseOperations(BaseDatabaseOperations):
             value = uuid.UUID(value)
         return value
     
+    def no_limit_value(self):
+        return None
