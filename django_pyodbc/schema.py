@@ -1,3 +1,4 @@
+import datetime
 from django.db.backends.base.schema import BaseDatabaseSchemaEditor
 from django.db.models import NOT_PROVIDED
 
@@ -23,6 +24,20 @@ class DatabaseSchemaEditor(BaseDatabaseSchemaEditor):
     sql_delete_pk = "ALTER TABLE %(table)s DROP PRIMARY KEY %(name)s"
 
     sql_delete_index = "DROP INDEX %(name)s ON %(table)s"
+
+    def quote_value(self, value):
+        if isinstance(value, (datetime.date, datetime.time, datetime.datetime)):
+            return "'%s'" % value
+        elif isinstance(value, str):
+            return "'%s'" % value.replace("\'", "\'\'")
+        elif isinstance(value, (bytes, bytearray, memoryview)):
+            return  "X'%s'" % value.hex()
+        elif isinstance(value, bool):
+            return "1" if value else "0"
+        elif value is None:
+            return "NULL"
+        else:
+            return str(value)
 
     def column_sql(self, model, field, include_default=False):
         """
@@ -70,10 +85,9 @@ class DatabaseSchemaEditor(BaseDatabaseSchemaEditor):
         if tablespace and self.connection.features.supports_tablespaces and field.unique:
             sql += " %s" % self.connection.ops.tablespace_sql(tablespace, inline=True)
         # Return the sql
-        return sql, params   	
+        return sql, params   
 
     def _alter_column_type_sql(self, table, old_field, new_field, new_type):
-#        new_type = self._set_field_new_type_null_status(old_field, new_type)
         return super(DatabaseSchemaEditor, self)._alter_column_type_sql(table, old_field, new_field, new_type)
 
     def _rename_field_sql(self, table, old_field, new_field, new_type):

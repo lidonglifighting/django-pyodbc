@@ -42,6 +42,7 @@
 import subprocess
 import base64
 import random
+import os
 
 try:
     from django.db.backends.base.creation import BaseDatabaseCreation
