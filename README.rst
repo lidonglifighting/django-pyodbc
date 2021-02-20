@@ -23,7 +23,8 @@ Installation
 1. Install django-pyodbc.
 
    .. code:: python
-
+      git clone -b dbmaker https://github.com/lidonglifighting/django-pyodbc
+      cd django-pyodbc
       python setup.py install
       
 2. Now you can now add a database to your settings using standard ODBC parameters.
@@ -96,11 +97,62 @@ Tests
 -----
 
 To run the test suite for django 22:
-.. code:: bash
+   .. code:: python
+   Windows:
+   create database. em. test_utf8db database
+   Dmconfig.ini:
+[test_utf8db]
+db_lcode = 10
+DB_PtNum=2478
+DB_SvAdr=127.0.0.1
+
+   open C:\DBMaker\5.4\bin\dmsql32.exe
+create db test_utf8db;
+run C:\DBMaker\5.4\shared\udf\dt.sql;
+run C:\DBMaker\5.4\shared\udf\to_date.sql;
+terminate db;
+q;
+   start database
+dmserver.exe TEST_UTF8DB
+create odbc data source in odbc driver manager
+run testcase for django2.2
    cd tests/django22
    python runtests.py 每-settings=test_django_dbmaker 每-keepdb 
-   or
-   Sudo python3  ./runtests.py 每-settings=test_django_dbmaker 每-keepdb
+   
+   Linux:
+   create database.
+   dmconfig.ini in /home/dbmaker/5.4/
+[test_utf8db]
+db_lcode = 10
+DB_PtNum=2478
+DB_SvAdr=127.0.0.1
+   open /home/dbmaker/5.4/bin/dmsqls
+create db test_utf8db;
+run /home/dbmaker/5.4/shared/udf/dt.sql;
+run /home/dbmaker/5.4/shared/udf/to_date.sql;
+terminate db;
+q;
+   start database
+dmserver test_utf8db
+   add odbc data source
+/etc/odbcinst.ini:
+[DBMaker 5.4 Driver]
+Driver=/home/dbmaker/5.4/lib/so/libdmapic.so
+UsageCount=1
+
+/etc/odbc.ini
+[test_utf8db]
+Driver = DBMaker 5.4 Driver
+Description = DBMaker ODBC Driver
+Server = localhost
+Host = localhost
+Port = 2453
+Database = test_utf8db
+Userid = sysadm
+Password =
+
+run testcase for django2.2
+   sudo python3  ./runtests.py 每-settings=test_django_dbmaker 每-keepdb
 
 
 From the original project README.
