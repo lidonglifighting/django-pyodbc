@@ -97,9 +97,10 @@ Tests
 -----
 
 To run the test suite for django 22:
-   .. code:: python
-   Windows:
-   create database. em. test_utf8db database
+   
+* ``Windows* ``
+``create database``  em. test_utf8db database
+```
    Dmconfig.ini:
 [test_utf8db]
 db_lcode = 10
@@ -115,11 +116,12 @@ q;
    start database
 dmserver.exe TEST_UTF8DB
 create odbc data source in odbc driver manager
-run testcase for django2.2
+   run testcase for django2.2
    cd tests/django22
    python runtests.py 每-settings=test_django_dbmaker 每-keepdb 
-   
-   Linux:
+```  
+* ``Linux* ``
+```
    create database.
    dmconfig.ini in /home/dbmaker/5.4/
 [test_utf8db]
@@ -153,8 +155,7 @@ Password =
 
 run testcase for django2.2
    sudo python3  ./runtests.py 每-settings=test_django_dbmaker 每-keepdb
-
-
+```
 From the original project README.
 
 * All the Django core developers, especially Malcolm Tredinnick. For being an example of technical excellence and for building such an impressive community.
