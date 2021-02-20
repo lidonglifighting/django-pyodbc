@@ -98,8 +98,10 @@ Tests
 
 To run the test suite for django 22:
    
-* ``Windows* ``
+* ``Windows``
+
 ``create database``  em. test_utf8db database
+
 ```
    Dmconfig.ini:
 [test_utf8db]
@@ -119,8 +121,10 @@ create odbc data source in odbc driver manager
    run testcase for django2.2
    cd tests/django22
    python runtests.py ¨C-settings=test_django_dbmaker ¨C-keepdb 
-```  
-* ``Linux* ``
+``` 
+ 
+* ``Linux*``
+
 ```
    create database.
    dmconfig.ini in /home/dbmaker/5.4/
