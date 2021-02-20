@@ -126,10 +126,9 @@ create odbc data source in odbc driver manager:
 
 run testcase for django2.2:
 
-   .. code:: python
+.. code:: bash
 
-       cd tests/django22
-       python runtests.py 每-settings=test_django_dbmaker 每-keepdb 
+   python tests/django22/runtests.py --settings=test_django_dbmaker --keepdb
  
 Linux:
 
@@ -180,10 +179,10 @@ add odbc data source:
 
 run testcase for django2.2
 
-   .. code:: python
+.. code:: bash
 
-       sudo python3  ./runtests.py 每-settings=test_django_dbmaker 每-keepdb
-
+   sudo python3 tests/django22/runtests.py --settings=test_django_dbmaker --keepdb
+ 
 From the original project README.
 
 * All the Django core developers, especially Malcolm Tredinnick. For being an example of technical excellence and for building such an impressive community.
