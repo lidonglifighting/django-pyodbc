@@ -96,7 +96,7 @@ Standard Django settings
 Tests
 -----
    
-Windowsㄩ
+Windows:
 
 create database
 
@@ -108,7 +108,7 @@ Dmconfig.ini:
         DB_PtNum=2478
         DB_SvAdr=127.0.0.1
 
-open C:\DBMaker\5.4\bin\dmsql32.exe:
+open C:\\DBMaker\\5.4\\bin\\dmsql32.exe:
    .. code:: python
    
        create db test_utf8db;
@@ -129,9 +129,9 @@ run testcase for django2.2:
    .. code:: python
 
        cd tests/django22
-       python runtests.py 每-settings=test_django_dbmaker 每-keepdb  
+       python runtests.py \每-settings=test_django_dbmaker \每-keepdb  
  
-Linuxㄩ
+Linux:
 
 create database:
    
@@ -182,7 +182,7 @@ run testcase for django2.2
 
    .. code:: python
 
-       sudo python3  ./runtests.py 每-settings=test_django_dbmaker 每-keepdb
+       sudo python3  ./runtests.py \每-settings=test_django_dbmaker \每-keepdb
 
 From the original project README.
 
