@@ -98,10 +98,11 @@ Tests
    
 Windows£º
 
-``create database``  em. test_utf8db database
+create database
 
 Dmconfig.ini:
     .. code:: python
+    
         [test_utf8db]
         db_lcode = 10
         DB_PtNum=2478
@@ -123,7 +124,7 @@ start database:
 
 create odbc data source in odbc driver manager:
 
-``run testcase for django2.2``
+run testcase for django2.2:
 
    .. code:: python
 
@@ -132,16 +133,17 @@ create odbc data source in odbc driver manager:
  
 Linux£º
 
-``create database``
+create database:
    
 dmconfig.ini:
    .. code:: python
-        [test_utf8db]
-        db_lcode = 10
-        DB_PtNum=2478
-        DB_SvAdr=127.0.0.1
+   
+       [test_utf8db]
+       db_lcode = 10
+       DB_PtNum=2478
+       DB_SvAdr=127.0.0.1
 
-open /home/dbmaker/5.4/bin/dmsqls£º
+open /home/dbmaker/5.4/bin/dmsqls:
    .. code:: python
    
        create db test_utf8db;
@@ -150,11 +152,11 @@ open /home/dbmaker/5.4/bin/dmsqls£º
        terminate db;
        q;
    
-start database£º
+start database:
    .. code:: python
    
        dmserver test_utf8db
-add odbc data source£º
+add odbc data source:
 
 /etc/odbcinst.ini:
  .. code:: python
@@ -164,7 +166,7 @@ add odbc data source£º
     UsageCount=1
 
 /etc/odbc.ini:
-.. code:: python
+ .. code:: python
  
     [test_utf8db]
     Driver = DBMaker 5.4 Driver
@@ -176,7 +178,7 @@ add odbc data source£º
     Userid = sysadm
     Password =
 
-``run testcase for django2.2``
+run testcase for django2.2
 
    .. code:: python
 
