@@ -129,7 +129,7 @@ run testcase for django2.2:
    .. code:: python
 
        cd tests/django22
-       python runtests.py ``每-``settings=test_django_dbmaker ``每-``keepdb 
+       python runtests.py 每-settings=test_django_dbmaker 每-keepdb 
  
 Linux:
 
@@ -182,7 +182,7 @@ run testcase for django2.2
 
    .. code:: python
 
-       sudo python3  ./runtests.py ``每-``settings=test_django_dbmaker ``每-``keepdb
+       sudo python3  ./runtests.py 每-settings=test_django_dbmaker 每-keepdb
 
 From the original project README.
 
