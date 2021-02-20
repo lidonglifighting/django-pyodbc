@@ -101,26 +101,25 @@ Windows£º
 ``create database``  em. test_utf8db database
 
 Dmconfig.ini:
-
-    [test_utf8db]
+    .. code:: python
+        [test_utf8db]
         db_lcode = 10
         DB_PtNum=2478
         DB_SvAdr=127.0.0.1
 
 open C:\DBMaker\5.4\bin\dmsql32.exe:
-
-   .. code:: bash
+   .. code:: python
    
-   create db test_utf8db;
-   run C:\DBMaker\5.4\shared\udf\dt.sql;
-   run C:\DBMaker\5.4\shared\udf\to_date.sql;
-   terminate db;
-   q;
+       create db test_utf8db;
+       run C:\DBMaker\5.4\shared\udf\dt.sql;
+       run C:\DBMaker\5.4\shared\udf\to_date.sql;
+       terminate db;
+       q;
 
 start database:
-   .. code:: bash
+   .. code:: python
    
-   dmserver.exe TEST_UTF8DB
+       dmserver.exe TEST_UTF8DB
 
 create odbc data source in odbc driver manager:
 
@@ -136,45 +135,46 @@ Linux£º
 ``create database``
    
 dmconfig.ini:
-
-    [test_utf8db]
+   .. code:: python
+        [test_utf8db]
         db_lcode = 10
         DB_PtNum=2478
         DB_SvAdr=127.0.0.1
-open /home/dbmaker/5.4/bin/dmsqls£º
 
-   .. code:: bash
+open /home/dbmaker/5.4/bin/dmsqls£º
+   .. code:: python
    
-   create db test_utf8db;
-   run /home/dbmaker/5.4/shared/udf/dt.sql;
-   run /home/dbmaker/5.4/shared/udf/to_date.sql;
-   terminate db;
-   q;
+       create db test_utf8db;
+       run /home/dbmaker/5.4/shared/udf/dt.sql;
+       run /home/dbmaker/5.4/shared/udf/to_date.sql;
+       terminate db;
+       q;
    
 start database£º
-
-   .. code:: bash
+   .. code:: python
    
-   dmserver test_utf8db
+       dmserver test_utf8db
 add odbc data source£º
 
 /etc/odbcinst.ini:
-
-[DBMaker 5.4 Driver]
-Driver=/home/dbmaker/5.4/lib/so/libdmapic.so
-UsageCount=1
+ .. code:: python
+ 
+    [DBMaker 5.4 Driver]
+    Driver=/home/dbmaker/5.4/lib/so/libdmapic.so
+    UsageCount=1
 
 /etc/odbc.ini:
-
-[test_utf8db]
-Driver = DBMaker 5.4 Driver
-Description = DBMaker ODBC Driver
-Server = localhost
-Host = localhost
-Port = 2453
-Database = test_utf8db
-Userid = sysadm
-Password =
+.. code:: python
+ 
+    [test_utf8db]
+    Driver = DBMaker 5.4 Driver
+    Description = DBMaker ODBC Driver
+    Server = localhost
+    Host = localhost
+    Port = 2453
+    Database = test_utf8db
+    Userid = sysadm
+    Password =
 
 ``run testcase for django2.2``
 
