@@ -108,6 +108,10 @@ Dmconfig.ini:
         DB_PtNum=2478
         DB_SvAdr=127.0.0.1
 
+path_install_dbmaker/shared/lua/modconfig.ini:
+    .. code:: python
+        LuaDate=LuaDate
+ 
 open C:\\DBMaker\\5.4\\bin\\dmsql32.exe:
    .. code:: python
    
@@ -141,6 +145,10 @@ dmconfig.ini:
        db_lcode = 10
        DB_PtNum=2478
        DB_SvAdr=127.0.0.1
+
+path_install_dbmaker/shared/lua/modconfig.ini:
+    .. code:: python
+        LuaDate=LuaDate
 
 open /home/dbmaker/5.4/bin/dmsqls:
    .. code:: python
