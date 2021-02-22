@@ -23,6 +23,7 @@ Installation
 1. Install django-pyodbc.
 
    .. code:: python
+
       git clone -b dbmaker https://github.com/lidonglifighting/django-pyodbc
       cd django-pyodbc
       python setup.py install
@@ -110,6 +111,7 @@ Dmconfig.ini:
 
 path_install_dbmaker/shared/lua/modconfig.ini:
     .. code:: python
+
         LuaDate=LuaDate
  
 open C:\\DBMaker\\5.4\\bin\\dmsql32.exe:
@@ -148,6 +150,7 @@ dmconfig.ini:
 
 path_install_dbmaker/shared/lua/modconfig.ini:
     .. code:: python
+
         LuaDate=LuaDate
 
 open /home/dbmaker/5.4/bin/dmsqls:
