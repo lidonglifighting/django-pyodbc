@@ -115,7 +115,7 @@ class DatabaseOperations(BaseDatabaseOperations):
             return "MINUTE(%s)" % field_name
         else:
             return "SECOND(%s)" % field_name
-    
+      
     def date_trunc_sql(self, lookup_type, field_name):
         if lookup_type =='year':
             return "TO_DATE(STRDATE(%s,'start of year'), 'yyyy-mm-dd')" % field_name
@@ -223,8 +223,8 @@ class DatabaseOperations(BaseDatabaseOperations):
         return cursor.fetchone()[0]
 
     def lookup_cast(self, lookup_type, internal_type=None):
-     #   if lookup_type in ('iexact', 'icontains', 'istartswith', 'iendswith'):
-     #       return "UPPER(%s)"
+        if lookup_type in ('iexact', 'icontains', 'istartswith', 'iendswith'):
+            return "UPPER(%s)"
         return "%s"
 
     def max_name_length(self):

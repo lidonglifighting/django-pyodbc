@@ -135,15 +135,15 @@ class DatabaseWrapper(BaseDatabaseWrapper):
         'exact': '= %s',
         'iexact': "= UPPER(%s)",
         'contains': "LIKE %s ESCAPE '\\'",
-        'icontains': "LIKE %s ESCAPE '\\'",
+        'icontains': "LIKE UPPER(%s) ESCAPE '\\'",
         'gt': '> %s',
         'gte': '>= %s',
         'lt': '< %s',
         'lte': '<= %s',
         'startswith': "LIKE %s ESCAPE '\\'",
         'endswith': "LIKE %s ESCAPE '\\'",
-        'istartswith': "LIKE %s ESCAPE '\\'",
-        'iendswith': "LIKE %s ESCAPE '\\'",
+        'istartswith': "LIKE UPPER(%s) ESCAPE '\\'",
+        'iendswith': "LIKE UPPER(%s) ESCAPE '\\'",
 
         # TODO: remove, keep native T-SQL LIKE wildcards support
         # or use a "compatibility layer" and replace '*' with '%'
@@ -152,6 +152,16 @@ class DatabaseWrapper(BaseDatabaseWrapper):
         'iregex': 'LIKE %s',
 
         # TODO: freetext, full-text contains...
+    }
+
+    pattern_esc = r"REPLACE(REPLACE(REPLACE({}, '\', '\\'), '%%', '\%%'), '_', '\_')"
+    pattern_ops = {
+        'contains': r"LIKE '%%' || {} || '%%' ESCAPE '\'",
+        'icontains': r"LIKE '%%' || UPPER({}) || '%%' ESCAPE '\'",
+        'startswith': r"LIKE {} || '%%' ESCAPE '\'",
+        'istartswith': r"LIKE UPPER({}) || '%%' ESCAPE '\'",
+        'endswith': r"LIKE '%%' || {} ESCAPE '\'",
+        'iendswith': r"LIKE '%%' || UPPER({}) ESCAPE '\'",
     }
 
     # In Django 1.8 data_types was moved from DatabaseCreation to DatabaseWrapper.
@@ -238,7 +248,11 @@ class DatabaseWrapper(BaseDatabaseWrapper):
         return Database.connect(**conn_params)
 
     def init_connection_state(self):
-        pass
+        cursor = self.create_cursor()
+        cursor.execute("set string concat on")
+        cursor.close()
+        if not self.get_autocommit():
+            self.commit()
 
     def _set_autocommit(self, autocommit):
         with self.wrap_database_errors:
