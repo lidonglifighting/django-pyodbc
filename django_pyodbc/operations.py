@@ -115,7 +115,15 @@ class DatabaseOperations(BaseDatabaseOperations):
             return "MINUTE(%s)" % field_name
         else:
             return "SECOND(%s)" % field_name
-      
+    
+    def date_interval_sql(self, timedelta):
+        """
+        implements the interval functionality for expressions
+        """
+        sec = timedelta.seconds + timedelta.days * 86400
+        sql = 'TIMESTAMPADD(\'s\', %d%%s, %%s )' % sec        
+        return sql
+     
     def date_trunc_sql(self, lookup_type, field_name):
         if lookup_type =='year':
             return "TO_DATE(STRDATE(%s,'start of year'), 'yyyy-mm-dd')" % field_name
@@ -129,6 +137,9 @@ class DatabaseOperations(BaseDatabaseOperations):
             return field_name
         #return "DATEADD(%s, DATEDIFF(%s, 0, %s), 0)" % (lookup_type, lookup_type, field_name)
 
+    def format_for_duration_arithmetic(self, sql):
+        return sql
+    
     def _convert_field_to_tz(self, field_name, tzname):
         if settings.USE_TZ and not tzname == 'UTC':
             offset = self._get_utcoffset(tzname)
