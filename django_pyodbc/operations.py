@@ -61,6 +61,7 @@ from django.utils.dateparse import parse_date, parse_time, parse_datetime
 
 from django_pyodbc.compat import smart_text, string_types, timezone
 from django.utils import six
+from django.utils.duration import duration_microseconds
 
 class DatabaseOperations(BaseDatabaseOperations):
     compiler_module = "django_pyodbc.compiler"
@@ -90,7 +91,21 @@ class DatabaseOperations(BaseDatabaseOperations):
                 self._right_sql_quote = q
             else:           
                 self._right_sql_quote = '"'
-        return self._right_sql_quote
+        return self._right_sql_quote        
+        
+    def combine_expression(self, connector, sub_expressions):
+        """
+        DBMaker requires special cases for some operators in query expressions
+        """
+        if connector == '%%':
+            return 'MOD(%s)' % ','.join(sub_expressions)
+        elif connector == '^':
+            return 'POWER(%s)' % ','.join(sub_expressions)
+        elif connector == '<<':
+            return '%s * (2 * %s)' % tuple(sub_expressions)
+        elif connector == '>>':
+            return '%s / (2 * %s)' % tuple(sub_expressions)
+        return super().combine_expression(connector, sub_expressions)
 
     def date_extract_sql(self, lookup_type, field_name):
         """
@@ -117,12 +132,7 @@ class DatabaseOperations(BaseDatabaseOperations):
             return "SECOND(%s)" % field_name
     
     def date_interval_sql(self, timedelta):
-        """
-        implements the interval functionality for expressions
-        """
-        sec = timedelta.seconds + timedelta.days * 86400
-        sql = 'TIMESTAMPADD(\'s\', %d%%s, %%s )' % sec        
-        return sql
+        return str(duration_microseconds(timedelta))
      
     def date_trunc_sql(self, lookup_type, field_name):
         if lookup_type =='year':
