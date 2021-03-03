@@ -17,5 +17,6 @@ class DatabaseFeatures(BaseDatabaseFeatures):
     ignores_nulls_in_unique_constraints = False
     can_introspect_autofield = True
     has_case_insensitive_like = False
+    requires_literal_defaults = True
 #    case_whennot_not_supported = True
 

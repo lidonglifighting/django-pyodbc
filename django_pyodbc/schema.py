@@ -86,10 +86,13 @@ class DatabaseSchemaEditor(BaseDatabaseSchemaEditor):
             sql += " %s" % self.connection.ops.tablespace_sql(tablespace, inline=True)
         # Return the sql
         return sql, params   
-
+   
     def _alter_column_type_sql(self, table, old_field, new_field, new_type):
         return super(DatabaseSchemaEditor, self)._alter_column_type_sql(table, old_field, new_field, new_type)
-
+    
+    def prepare_default(self, value):
+        return self.quote_value(value)
+    
     def _rename_field_sql(self, table, old_field, new_field, new_type):
 #        new_type = self._set_field_new_type_null_status(old_field, new_type)
         return super(DatabaseSchemaEditor, self)._rename_field_sql(table, old_field, new_field, new_type)
